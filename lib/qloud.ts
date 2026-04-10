@@ -140,18 +140,23 @@ export function clasificarProducto(
 }
 
 /**
- * Busca en el array de productos de una orden si alguno es una
- * computadora o notebook (de la categoría Computadoras del sitio).
- * Devuelve el tipo del primer producto clasificable.
+ * Analiza todos los productos de la orden y determina el tipo global:
+ * - Si hay solo notebooks → "notebook"
+ * - Si hay solo computadoras → "computadora"
+ * - Si hay mezcla → "varios"
+ * - Si no hay ninguno clasificable → null
  */
 export function detectarTipoProducto(
   productos: QloudProducto[]
 ): TipoProducto | null {
+  const tipos = new Set<TipoProducto>();
   for (const p of productos) {
     const tipo = clasificarProducto(p.nombre);
-    if (tipo) return tipo;
+    if (tipo) tipos.add(tipo);
   }
-  return null;
+  if (tipos.size === 0) return null;
+  if (tipos.size === 1) return [...tipos][0];
+  return "varios"; // mezcla de notebook + computadora
 }
 
 // ─── Conversión a formato interno ─────────────────────────────────────────────

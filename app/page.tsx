@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
 import { OrderCard } from "@/components/order-card";
@@ -10,6 +10,13 @@ type Props = {
   searchParams: Promise<{ seccion?: string; estado?: string }>;
 };
 
+const SECCIONES = [
+  { key: "todos", label: "Todos", emoji: "📋" },
+  { key: "notebooks", label: "Notebooks", emoji: "💻" },
+  { key: "computadoras", label: "Computadoras", emoji: "🖥️" },
+  { key: "varios", label: "Varios", emoji: "🗂️" },
+] as const;
+
 const ESTADO_FILTROS: { key: string; label: string }[] = [
   { key: "todos", label: "Todos" },
   { key: "pendiente", label: "Pendiente" },
@@ -18,42 +25,64 @@ const ESTADO_FILTROS: { key: string; label: string }[] = [
   { key: "despachado", label: "Despachado" },
 ];
 
+const SECCION_TO_TIPO = {
+  notebooks: "notebook",
+  computadoras: "computadora",
+  varios: "varios",
+} as const;
+
 export default async function DashboardPage({ searchParams }: Props) {
   const params = await searchParams;
-  const seccion = params.seccion === "computadoras" ? "computadoras" : "notebooks";
-  const estadoFiltro = params.estado ?? "todos";
-
   const session = await auth();
+  const rol = session?.user?.rol ?? "tecnico";
 
-  // Query base por tipo de producto
-  const tipoProducto = seccion === "notebooks" ? "notebook" : "computadora";
+  const seccionParam = params.seccion ?? "todos";
+  const seccion = ["todos", "notebooks", "computadoras", "varios"].includes(seccionParam)
+    ? seccionParam
+    : "todos";
 
-  const whereConditions =
-    estadoFiltro !== "todos"
-      ? and(
-          eq(orders.tipoProducto, tipoProducto),
-          eq(orders.estado, estadoFiltro as EstadoOrden)
-        )
-      : eq(orders.tipoProducto, tipoProducto);
+  // Técnicos ven "pendiente" por defecto, admins ven "todos"
+  const defaultEstado = rol === "tecnico" ? "pendiente" : "todos";
+  const estadoFiltro = params.estado ?? defaultEstado;
+
+  // Construir condiciones WHERE
+  const tipoProducto = seccion !== "todos" ? SECCION_TO_TIPO[seccion as keyof typeof SECCION_TO_TIPO] : null;
+
+  // Para técnicos sin filtro explícito: excluir despachados
+  const estadosVisibles: EstadoOrden[] =
+    rol === "tecnico" && estadoFiltro === "todos"
+      ? ["pendiente", "preparacion", "listo"]
+      : estadoFiltro !== "todos"
+      ? [estadoFiltro as EstadoOrden]
+      : ["pendiente", "preparacion", "listo", "despachado"];
+
+  const conditions = [
+    ...(tipoProducto ? [eq(orders.tipoProducto, tipoProducto)] : []),
+    ...(estadoFiltro === "todos" && rol === "tecnico"
+      ? [inArray(orders.estado, estadosVisibles)]
+      : estadoFiltro !== "todos"
+      ? [eq(orders.estado, estadoFiltro as EstadoOrden)]
+      : []),
+  ];
 
   const pedidos = await db
     .select()
     .from(orders)
-    .where(whereConditions)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(orders.createdAt));
 
-  // Contadores por estado
-  const todos = await db
+  // Contadores por estado (para la sección actual)
+  const todosParaConteo = await db
     .select({ estado: orders.estado })
     .from(orders)
-    .where(eq(orders.tipoProducto, tipoProducto));
+    .where(tipoProducto ? eq(orders.tipoProducto, tipoProducto) : undefined);
 
   const contadores = {
-    todos: todos.length,
-    pendiente: todos.filter((o) => o.estado === "pendiente").length,
-    preparacion: todos.filter((o) => o.estado === "preparacion").length,
-    listo: todos.filter((o) => o.estado === "listo").length,
-    despachado: todos.filter((o) => o.estado === "despachado").length,
+    todos: todosParaConteo.length,
+    pendiente: todosParaConteo.filter((o) => o.estado === "pendiente").length,
+    preparacion: todosParaConteo.filter((o) => o.estado === "preparacion").length,
+    listo: todosParaConteo.filter((o) => o.estado === "listo").length,
+    despachado: todosParaConteo.filter((o) => o.estado === "despachado").length,
   };
 
   return (
@@ -65,6 +94,9 @@ export default async function DashboardPage({ searchParams }: Props) {
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-500 hidden sm:block">
               {session?.user?.name}
+              {rol === "admin" && (
+                <span className="ml-1 text-blue-500">(admin)</span>
+              )}
             </span>
             <Link
               href="/orders/new"
@@ -72,6 +104,14 @@ export default async function DashboardPage({ searchParams }: Props) {
             >
               + Nuevo pedido
             </Link>
+            {rol === "admin" && (
+              <Link
+                href="/orders/import"
+                className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+              >
+                Importar Qloud
+              </Link>
+            )}
             <form
               action={async () => {
                 "use server";
@@ -91,34 +131,30 @@ export default async function DashboardPage({ searchParams }: Props) {
 
       <main className="max-w-7xl mx-auto px-4 py-4">
         {/* Tabs de sección */}
-        <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
-          <Link
-            href={`/?seccion=notebooks${estadoFiltro !== "todos" ? `&estado=${estadoFiltro}` : ""}`}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              seccion === "notebooks"
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            💻 Notebooks
-          </Link>
-          <Link
-            href={`/?seccion=computadoras${estadoFiltro !== "todos" ? `&estado=${estadoFiltro}` : ""}`}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              seccion === "computadoras"
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            🖥️ Computadoras
-          </Link>
+        <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit overflow-x-auto">
+          {SECCIONES.map((s) => (
+            <Link
+              key={s.key}
+              href={`/?seccion=${s.key}&estado=${estadoFiltro}`}
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                seccion === s.key
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              {s.emoji} {s.label}
+            </Link>
+          ))}
         </div>
 
         {/* Filtros por estado */}
         <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
-          {ESTADO_FILTROS.map((f) => {
+          {ESTADO_FILTROS.filter(
+            (f) => rol === "admin" || f.key !== "despachado" || estadoFiltro === "despachado"
+          ).map((f) => {
             const count = contadores[f.key as keyof typeof contadores];
-            const isActive = estadoFiltro === f.key;
+            const isActive = estadoFiltro === f.key ||
+              (estadoFiltro === "todos" && f.key === "todos");
             return (
               <Link
                 key={f.key}
@@ -130,14 +166,28 @@ export default async function DashboardPage({ searchParams }: Props) {
                 }`}
               >
                 {f.label}
-                <span
-                  className={`ml-1 ${isActive ? "text-blue-200" : "text-gray-400"}`}
-                >
+                <span className={`ml-1 ${isActive ? "text-blue-200" : "text-gray-400"}`}>
                   ({count})
                 </span>
               </Link>
             );
           })}
+          {/* Técnicos: botón para ver despachados */}
+          {rol === "tecnico" && (
+            <Link
+              href={`/?seccion=${seccion}&estado=despachado`}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                estadoFiltro === "despachado"
+                  ? "bg-blue-600 text-white"
+                  : "bg-white text-gray-500 border border-gray-200 hover:border-blue-300"
+              }`}
+            >
+              Despachado
+              <span className={`ml-1 ${estadoFiltro === "despachado" ? "text-blue-200" : "text-gray-400"}`}>
+                ({contadores.despachado})
+              </span>
+            </Link>
+          )}
         </div>
 
         {/* Grid de pedidos */}

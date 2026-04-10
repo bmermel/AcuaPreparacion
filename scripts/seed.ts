@@ -43,6 +43,7 @@ async function seed() {
         name: USUARIO.name,
         email: USUARIO.email,
         passwordHash,
+        rol: "admin",
       })
       .onConflictDoNothing({ target: users.email });
 

@@ -3,12 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { orders } from "./db/schema";
+import { orders, reglasProducto } from "./db/schema";
 import type { EstadoOrden, TipoOrden, TipoProducto, NewOrder } from "./db/schema";
 import { auth } from "./auth";
 import { redirect } from "next/navigation";
+import { sendPedidoListoEmail } from "./email";
+import { calcularFechaEntrega } from "./delivery";
+import { fetchQloudOrder, qloudOrderToNewOrder } from "./qloud";
 
-// ─── Avanzar estado de un pedido ──────────────────────────────────────────────
+// ─── Avanzar estado ───────────────────────────────────────────────────────────
 
 const ESTADOS: EstadoOrden[] = ["pendiente", "preparacion", "listo", "despachado"];
 
@@ -17,7 +20,7 @@ export async function avanzarEstado(orderId: string) {
   if (!session) redirect("/login");
 
   const [order] = await db
-    .select({ estado: orders.estado })
+    .select()
     .from(orders)
     .where(eq(orders.id, orderId))
     .limit(1);
@@ -25,7 +28,7 @@ export async function avanzarEstado(orderId: string) {
   if (!order) throw new Error("Pedido no encontrado");
 
   const idxActual = ESTADOS.indexOf(order.estado);
-  if (idxActual === ESTADOS.length - 1) return; // ya está despachado
+  if (idxActual === ESTADOS.length - 1) return;
 
   const nuevoEstado = ESTADOS[idxActual + 1];
 
@@ -34,11 +37,20 @@ export async function avanzarEstado(orderId: string) {
     .set({ estado: nuevoEstado, updatedAt: new Date() })
     .where(eq(orders.id, orderId));
 
+  // Email automático cuando pasa a "listo" y es retiro en local
+  if (nuevoEstado === "listo" && order.envioTipo === "retiro" && order.clienteEmail) {
+    sendPedidoListoEmail({
+      clienteEmail: order.clienteEmail,
+      clienteNombre: order.clienteNombre,
+      referencia: order.referencia,
+    }).catch(console.error);
+  }
+
   revalidatePath("/");
   revalidatePath(`/orders/${orderId}`);
 }
 
-// ─── Retroceder estado de un pedido ───────────────────────────────────────────
+// ─── Retroceder estado ────────────────────────────────────────────────────────
 
 export async function retrocederEstado(orderId: string) {
   const session = await auth();
@@ -53,7 +65,7 @@ export async function retrocederEstado(orderId: string) {
   if (!order) throw new Error("Pedido no encontrado");
 
   const idxActual = ESTADOS.indexOf(order.estado);
-  if (idxActual === 0) return; // ya está en pendiente
+  if (idxActual === 0) return;
 
   const estadoAnterior = ESTADOS[idxActual - 1];
 
@@ -91,12 +103,18 @@ export async function crearPedidoManual(formData: FormData) {
   const referencia = (formData.get("referencia") as string).trim();
   const tipoProducto = formData.get("tipoProducto") as TipoProducto;
   const clienteNombre = (formData.get("clienteNombre") as string)?.trim() || null;
+  const clienteEmail = (formData.get("clienteEmail") as string)?.trim() || null;
   const clienteTel = (formData.get("clienteTel") as string)?.trim() || null;
   const notas = (formData.get("notas") as string)?.trim() || null;
+  const fechaCustomStr = formData.get("fechaEntregaCustom") as string;
 
   if (!tipoOrden || !referencia || !tipoProducto) {
     throw new Error("Faltan campos requeridos");
   }
+
+  const ahora = new Date();
+  const fechaEntregaEstimada = calcularFechaEntrega(ahora, tipoProducto, 1);
+  const fechaEntregaCustom = fechaCustomStr ? new Date(fechaCustomStr) : null;
 
   const newOrder: Omit<NewOrder, "id"> = {
     qloudId: null,
@@ -104,7 +122,7 @@ export async function crearPedidoManual(formData: FormData) {
     referencia,
     tipoProducto,
     clienteNombre,
-    clienteEmail: null,
+    clienteEmail,
     clienteTel,
     clienteDni: null,
     productos: null,
@@ -114,12 +132,117 @@ export async function crearPedidoManual(formData: FormData) {
     precio: null,
     notas,
     estado: "pendiente",
-    fechaVenta: new Date(),
+    fechaVenta: ahora,
+    fechaEntregaEstimada,
+    fechaEntregaCustom,
   };
 
   await db.insert(orders).values(newOrder);
   revalidatePath("/");
   redirect("/");
+}
+
+// ─── Actualizar fecha de entrega custom ───────────────────────────────────────
+
+export async function actualizarFechaEntregaCustom(orderId: string, fecha: Date | null) {
+  const session = await auth();
+  if (!session) redirect("/login");
+
+  await db
+    .update(orders)
+    .set({ fechaEntregaCustom: fecha, updatedAt: new Date() })
+    .where(eq(orders.id, orderId));
+
+  revalidatePath("/");
+  revalidatePath(`/orders/${orderId}`);
+}
+
+// ─── Importar pedido desde Qloud por ID ──────────────────────────────────────
+
+export async function importarDesdeQloud(qloudId: number): Promise<{
+  success: boolean;
+  mensaje: string;
+  orderId?: string;
+  productosNoClasificados?: string[];
+}> {
+  const session = await auth();
+  if (!session) redirect("/login");
+
+  const qloudOrder = await fetchQloudOrder(qloudId);
+  if (!qloudOrder) {
+    return { success: false, mensaje: `No se encontró el pedido #${qloudId} en Qloud` };
+  }
+
+  // Detectar productos no clasificados para mostrar al usuario
+  const { clasificarProducto } = await import("./qloud");
+  const productosNoClasificados = qloudOrder.productos
+    .filter((p) => clasificarProducto(p.nombre) === null)
+    .map((p) => p.nombre);
+
+  let newOrder: Omit<NewOrder, "id">;
+  try {
+    newOrder = qloudOrderToNewOrder(qloudOrder);
+  } catch {
+    return {
+      success: false,
+      mensaje: `El pedido #${qloudId} no tiene productos de computadoras`,
+      productosNoClasificados,
+    };
+  }
+
+  // Calcular fecha estimada
+  const cantidadTotal = (newOrder.productos as Array<{ cantidad: number }> ?? [])
+    .reduce((s, p) => s + p.cantidad, 0);
+  const fechaEntregaEstimada = calcularFechaEntrega(
+    new Date(),
+    newOrder.tipoProducto,
+    cantidadTotal
+  );
+
+  // Upsert
+  const [existing] = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(eq(orders.qloudId, qloudId))
+    .limit(1);
+
+  let orderId: string;
+  if (existing) {
+    await db
+      .update(orders)
+      .set({ ...newOrder, fechaEntregaEstimada, updatedAt: new Date() })
+      .where(eq(orders.qloudId, qloudId));
+    orderId = existing.id;
+  } else {
+    const [inserted] = await db
+      .insert(orders)
+      .values({ ...newOrder, fechaEntregaEstimada })
+      .returning({ id: orders.id });
+    orderId = inserted.id;
+  }
+
+  revalidatePath("/");
+  return {
+    success: true,
+    mensaje: existing
+      ? `Pedido #${qloudId} actualizado correctamente`
+      : `Pedido #${qloudId} importado correctamente`,
+    orderId,
+    productosNoClasificados: productosNoClasificados.length > 0 ? productosNoClasificados : undefined,
+  };
+}
+
+// ─── Guardar regla de clasificación ──────────────────────────────────────────
+
+export async function guardarReglaProducto(patron: string, tipoProducto: TipoProducto) {
+  const session = await auth();
+  if (!session) redirect("/login");
+
+  await db.insert(reglasProducto).values({
+    patron: patron.toLowerCase().trim(),
+    tipoProducto,
+    creadoPor: session.user.email ?? "desconocido",
+  });
 }
 
 // ─── Eliminar pedido ──────────────────────────────────────────────────────────

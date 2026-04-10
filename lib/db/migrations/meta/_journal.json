@@ -8,6 +8,13 @@
       "when": 1775778600285,
       "tag": "0000_last_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775781420846,
+      "tag": "0001_sharp_spirit",
+      "breakpoints": true
     }
   ]
 }

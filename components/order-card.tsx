@@ -6,13 +6,6 @@ import type { Order, Producto } from "@/lib/db/schema";
 import { EstadoBadge } from "./status-stepper";
 import { avanzarEstado, guardarNotas } from "@/lib/actions";
 
-const ESTADO_LABELS = {
-  pendiente: "Pendiente",
-  preparacion: "En preparación",
-  listo: "Listo",
-  despachado: "Despachado",
-};
-
 const NEXT_ESTADO_LABELS = {
   pendiente: "Marcar en preparación",
   preparacion: "Marcar como listo",
@@ -20,13 +13,23 @@ const NEXT_ESTADO_LABELS = {
   despachado: null,
 };
 
-const TIPO_ORDEN_LABEL = {
+const TIPO_ORDEN_LABEL: Record<string, string> = {
   web: "Web",
   factura_a: "Factura A",
   factura_b: "Factura B",
   cotizacion: "Cotización",
   orden_venta: "Orden de Venta",
 };
+
+function formatFechaEntrega(fecha: Date | string | null): string | null {
+  if (!fecha) return null;
+  return new Date(fecha).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export function OrderCard({ order }: { order: Order }) {
   const [notas, setNotas] = useState(order.notas ?? "");
@@ -36,7 +39,13 @@ export function OrderCard({ order }: { order: Order }) {
   const productos = (order.productos as Producto[]) ?? [];
   const nextLabel = NEXT_ESTADO_LABELS[order.estado];
 
-  function handleAvanzar() {
+  const fechaEntrega = order.fechaEntregaCustom ?? order.fechaEntregaEstimada;
+  const fechaEntregaStr = formatFechaEntrega(fechaEntrega);
+  const esCustom = !!order.fechaEntregaCustom;
+
+  function handleAvanzar(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
     startTransition(() => avanzarEstado(order.id));
   }
 
@@ -45,17 +54,21 @@ export function OrderCard({ order }: { order: Order }) {
     startSavingNotas(() => guardarNotas(order.id, notas));
   }
 
+  function handleNotasClick(e: React.MouseEvent) {
+    e.stopPropagation();
+  }
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+    <Link
+      href={`/orders/${order.id}`}
+      className="block bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow cursor-pointer"
+    >
       {/* Header: referencia + badge */}
       <div className="flex items-start justify-between gap-2 mb-3">
         <div>
-          <Link
-            href={`/orders/${order.id}`}
-            className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline"
-          >
+          <span className="text-sm font-semibold text-blue-600">
             {order.referencia}
-          </Link>
+          </span>
           <span className="ml-2 text-xs text-gray-400">
             {TIPO_ORDEN_LABEL[order.tipoOrden]}
           </span>
@@ -91,14 +104,23 @@ export function OrderCard({ order }: { order: Order }) {
         </p>
       )}
 
-      {/* Fecha */}
+      {/* Fecha de carga */}
       {order.fechaVenta && (
-        <p className="text-xs text-gray-400 mb-3">
+        <p className="text-xs text-gray-400">
+          Cargado:{" "}
           {new Date(order.fechaVenta).toLocaleDateString("es-AR", {
             day: "2-digit",
             month: "2-digit",
-            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
           })}
+        </p>
+      )}
+
+      {/* Fecha estimada de entrega */}
+      {fechaEntregaStr && (
+        <p className={`text-xs mb-3 ${esCustom ? "text-orange-600 font-medium" : "text-blue-600"}`}>
+          {esCustom ? "⚡ Urgente:" : "📅 Entrega est.:"} {fechaEntregaStr}
         </p>
       )}
 
@@ -108,6 +130,7 @@ export function OrderCard({ order }: { order: Order }) {
           value={notas}
           onChange={(e) => setNotas(e.target.value)}
           onBlur={handleNotasBlur}
+          onClick={handleNotasClick}
           placeholder="Agregar nota interna..."
           rows={2}
           className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-gray-300"
@@ -133,6 +156,6 @@ export function OrderCard({ order }: { order: Order }) {
           ✅ Entregado
         </div>
       )}
-    </div>
+    </Link>
   );
 }

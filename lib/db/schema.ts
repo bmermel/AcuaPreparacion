@@ -21,6 +21,7 @@ export const tipoOrdenEnum = pgEnum("tipo_orden", [
 export const tipoProductoEnum = pgEnum("tipo_producto", [
   "notebook",
   "computadora",
+  "varios",
 ]);
 
 export const envioTipoEnum = pgEnum("envio_tipo", ["retiro", "domicilio"]);
@@ -32,6 +33,8 @@ export const estadoEnum = pgEnum("estado", [
   "despachado",
 ]);
 
+export const rolEnum = pgEnum("rol", ["admin", "tecnico"]);
+
 // ─── Usuarios ─────────────────────────────────────────────────────────────────
 
 export const users = pgTable("users", {
@@ -39,6 +42,7 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  rol: rolEnum("rol").notNull().default("tecnico"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -46,32 +50,36 @@ export const users = pgTable("users", {
 
 export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // Solo para pedidos web (Qloud) — null para pedidos manuales
   qloudId: integer("qloud_id").unique(),
   tipoOrden: tipoOrdenEnum("tipo_orden").notNull(),
-  // Referencia visible: #130564, FCA54444, OV 3772, etc.
   referencia: text("referencia").notNull(),
   tipoProducto: tipoProductoEnum("tipo_producto").notNull(),
-  // Datos del cliente
   clienteNombre: text("cliente_nombre"),
   clienteEmail: text("cliente_email"),
   clienteTel: text("cliente_tel"),
   clienteDni: text("cliente_dni"),
-  // Productos como JSON array
   productos: jsonb("productos"),
-  // Envío
   envioTipo: envioTipoEnum("envio_tipo"),
   envioDireccion: jsonb("envio_direccion"),
-  // Pago
   pagoTipo: text("pago_tipo"),
   precio: text("precio"),
-  // Internas
   notas: text("notas"),
   estado: estadoEnum("estado").notNull().default("pendiente"),
-  // Fechas
   fechaVenta: timestamp("fecha_venta"),
+  fechaEntregaEstimada: timestamp("fecha_entrega_estimada"),
+  fechaEntregaCustom: timestamp("fecha_entrega_custom"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ─── Reglas de clasificación de productos (aprendizaje) ───────────────────────
+
+export const reglasProducto = pgTable("reglas_producto", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  patron: text("patron").notNull(),
+  tipoProducto: tipoProductoEnum("tipo_producto").notNull(),
+  creadoPor: text("creado_por").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 // ─── Tipos TypeScript ─────────────────────────────────────────────────────────
@@ -80,6 +88,7 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
+export type ReglaProducto = typeof reglasProducto.$inferSelect;
 
 export type Producto = {
   sku: string;
@@ -99,10 +108,11 @@ export type DireccionEnvio = {
 };
 
 export type EstadoOrden = "pendiente" | "preparacion" | "listo" | "despachado";
-export type TipoProducto = "notebook" | "computadora";
+export type TipoProducto = "notebook" | "computadora" | "varios";
 export type TipoOrden =
   | "web"
   | "factura_a"
   | "factura_b"
   | "cotizacion"
   | "orden_venta";
+export type Rol = "admin" | "tecnico";
