@@ -105,12 +105,20 @@ export default async function DashboardPage({ searchParams }: Props) {
               + Nuevo pedido
             </Link>
             {rol === "admin" && (
-              <Link
-                href="/orders/import"
-                className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
-              >
-                Importar Qloud
-              </Link>
+              <>
+                <Link
+                  href="/orders/import"
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+                >
+                  Qloud
+                </Link>
+                <Link
+                  href="/contabilium"
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+                >
+                  Contabilium
+                </Link>
+              </>
             )}
             <form
               action={async () => {

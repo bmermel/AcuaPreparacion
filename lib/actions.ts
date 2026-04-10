@@ -245,6 +245,106 @@ export async function guardarReglaProducto(patron: string, tipoProducto: TipoPro
   });
 }
 
+// ─── Importar comprobante de Contabilium ─────────────────────────────────────
+
+export async function importarDesdeContabilium(params: {
+  id: number;
+  tipoFc: "FCA" | "FCB" | "COT" | "OV";
+  tipoProducto: TipoProducto;
+}): Promise<{ success: boolean; mensaje: string; orderId?: string }> {
+  const session = await auth();
+  if (!session) redirect("/login");
+
+  const { id, tipoFc, tipoProducto } = params;
+
+  const { getComprobanteById, getOrdenVentaById } = await import("./contabilium");
+
+  let referencia: string;
+  let clienteNombre: string | null = null;
+  let clienteEmail: string | null = null;
+  let clienteTel: string | null = null;
+  let precio: string | null = null;
+  let fechaVenta: Date;
+
+  try {
+    if (tipoFc === "OV") {
+      const ov = await getOrdenVentaById(id);
+      referencia = ov.Numero;
+      clienteNombre = ov.RazonSocial || null;
+      clienteEmail = ov.Email || null;
+      clienteTel = ov.Telefono || null;
+      precio = String(ov.ImporteTotal);
+      fechaVenta = new Date(ov.FechaEmision);
+    } else {
+      const comp = await getComprobanteById(id);
+      referencia = comp.Numero;
+      clienteNombre = comp.RazonSocial || null;
+      clienteEmail = comp.Email || null;
+      clienteTel = comp.Telefono || null;
+      precio = String(comp.ImporteTotalNeto);
+      fechaVenta = new Date(comp.FechaEmision);
+    }
+  } catch (err) {
+    return { success: false, mensaje: `Error al obtener el comprobante: ${err instanceof Error ? err.message : "error desconocido"}` };
+  }
+
+  const tipoOrdenMap: Record<string, TipoOrden> = {
+    FCA: "factura_a",
+    FCB: "factura_b",
+    COT: "cotizacion",
+    OV: "orden_venta",
+  };
+
+  const tipoOrden: TipoOrden = tipoOrdenMap[tipoFc] ?? "factura_b";
+  const fechaEntregaEstimada = calcularFechaEntrega(fechaVenta, tipoProducto, 1);
+
+  // Verificar si ya existe (por referencia)
+  const [existing] = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(eq(orders.referencia, referencia))
+    .limit(1);
+
+  if (existing) {
+    return {
+      success: false,
+      mensaje: `Ya existe un pedido con la referencia ${referencia}`,
+      orderId: existing.id,
+    };
+  }
+
+  const [inserted] = await db
+    .insert(orders)
+    .values({
+      qloudId: null,
+      tipoOrden,
+      referencia,
+      tipoProducto,
+      clienteNombre,
+      clienteEmail,
+      clienteTel,
+      clienteDni: null,
+      productos: null,
+      envioTipo: null,
+      envioDireccion: null,
+      pagoTipo: null,
+      precio,
+      notas: null,
+      estado: "pendiente",
+      fechaVenta,
+      fechaEntregaEstimada,
+      fechaEntregaCustom: null,
+    })
+    .returning({ id: orders.id });
+
+  revalidatePath("/");
+  return {
+    success: true,
+    mensaje: `${referencia} importado correctamente`,
+    orderId: inserted.id,
+  };
+}
+
 // ─── Eliminar pedido ──────────────────────────────────────────────────────────
 
 export async function eliminarPedido(orderId: string) {

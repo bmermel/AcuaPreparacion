@@ -48,4 +48,12 @@ App de un solo rol (todo usuario es staff). Credenciales en tabla `users` con bc
 Requeridas en `.env.local`:
 - `DATABASE_URL` — Connection string de Neon PostgreSQL
 - `AUTH_SECRET` — String random 32+ chars para NextAuth
-- `QLOUD_USER=94`, `QLOUD_PASS=iTaVGCWgQTH1vuWCf1y7dG0`, `QLOUD_API_URL=https://rest.qloud.ar`
+- `QLOUD_USER=94`, `QLOUD_PASS=...`, `QLOUD_API_URL=https://rest.qloud.ar`
+- `RESEND_API_KEY`, `RESEND_FROM` — Email via Resend (actualmente `onboarding@resend.dev`)
+- `CONTABILIUM_CLIENT_ID`, `CONTABILIUM_CLIENT_SECRET` — API Contabilium (grant_type=client_credentials, base URL: `https://rest.contabilium.com`)
+
+### Integración Contabilium
+- `lib/contabilium.ts` — cliente con cache de token (86400s). Endpoints: `GET /api/comprobantes/search`, `GET /api/comprobantes/?id=`, `GET /api/ordenesVenta/search`, `GET /api/ordenesVenta/?id=`
+- `app/contabilium/` — UI para buscar por rango de fechas y tipos (FCA/FCB/COT/OV) e importar como pedidos
+- Solo accesible para rol `admin`
+- TipoFc en la API: "FCA" = Factura A, "FCB" = Factura B, "COT" = Cotización, OV se busca por endpoint separado
