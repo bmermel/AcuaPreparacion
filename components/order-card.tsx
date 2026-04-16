@@ -23,12 +23,12 @@ const TIPO_ORDEN_LABEL: Record<string, string> = {
 
 function formatFechaEntrega(fecha: Date | string | null): string | null {
   if (!fecha) return null;
-  return new Date(fecha).toLocaleDateString("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const d = new Date(fecha);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}, ${hh}:${min}`;
 }
 
 export function OrderCard({ order }: { order: Order }) {
@@ -106,20 +106,15 @@ export function OrderCard({ order }: { order: Order }) {
 
       {/* Fecha de carga */}
       {order.fechaVenta && (
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-400" suppressHydrationWarning>
           Cargado:{" "}
-          {new Date(order.fechaVenta).toLocaleDateString("es-AR", {
-            day: "2-digit",
-            month: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          {formatFechaEntrega(order.fechaVenta)}
         </p>
       )}
 
       {/* Fecha estimada de entrega */}
       {fechaEntregaStr && (
-        <p className={`text-xs mb-3 ${esCustom ? "text-orange-600 font-medium" : "text-blue-600"}`}>
+        <p className={`text-xs mb-3 ${esCustom ? "text-orange-600 font-medium" : "text-blue-600"}`} suppressHydrationWarning>
           {esCustom ? "⚡ Urgente:" : "📅 Entrega est.:"} {fechaEntregaStr}
         </p>
       )}

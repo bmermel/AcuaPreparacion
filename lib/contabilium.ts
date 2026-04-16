@@ -76,6 +76,7 @@ export interface ComprobanteResumen {
 export interface ComprobanteItem {
   Codigo: string;
   Nombre: string;
+  Concepto?: string;
   Cantidad: number;
   PrecioUnitario: number;
   Total: number;

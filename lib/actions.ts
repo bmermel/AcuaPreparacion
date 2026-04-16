@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { orders, reglasProducto, orderHistory } from "./db/schema";
-import type { EstadoOrden, TipoOrden, TipoProducto, NewOrder } from "./db/schema";
+import type { EstadoOrden, TipoOrden, TipoProducto, NewOrder, Producto } from "./db/schema";
 import { auth } from "./auth";
 import { redirect } from "next/navigation";
 import { sendPedidoListoEmail, sendPedidoListoEnvioEmail } from "./email";
@@ -300,10 +300,12 @@ export async function importarDesdeContabilium(params: {
   let clienteTel: string | null = null;
   let precio: string | null = null;
   let fechaVenta: Date;
+  let productos: Producto[] = [];
 
   try {
     if (tipoFc === "OV") {
       const ov = await getOrdenVentaById(id);
+      console.log("[Contabilium OV detalle]", JSON.stringify({ NumeroOrden: ov.NumeroOrden, ItemsCount: ov.Items?.length, Items: ov.Items?.slice(0, 2) }));
       referencia = ov.NumeroOrden;
       clienteNombre = ov.Comprador || null;
       clienteEmail = ov.Email || null;
@@ -312,14 +314,31 @@ export async function importarDesdeContabilium(params: {
       fechaVenta = ov.FechaCreacion.includes("T")
         ? new Date(ov.FechaCreacion)
         : parsearFechaDDMMYYYY(ov.FechaCreacion);
+      if (ov.Items?.length) {
+        productos = ov.Items.map((item) => ({
+          sku: item.Codigo || "",
+          nombre: item.Concepto || item.Nombre || "",
+          cantidad: item.Cantidad,
+          precio: item.PrecioUnitario,
+        }));
+      }
     } else {
       const comp = await getComprobanteById(id);
+      console.log("[Contabilium Comp detalle]", JSON.stringify({ Numero: comp.Numero, ItemsCount: comp.Items?.length, Items: comp.Items?.slice(0, 2) }));
       referencia = comp.Numero;
       clienteNombre = comp.RazonSocial || null;
       clienteEmail = comp.Email || null;
       clienteTel = comp.Telefono || null;
       precio = String(parsearMontoAR(comp.ImporteTotalNeto));
       fechaVenta = new Date(comp.FechaEmision);
+      if (comp.Items?.length) {
+        productos = comp.Items.map((item) => ({
+          sku: item.Codigo || "",
+          nombre: item.Concepto || item.Nombre || "",
+          cantidad: item.Cantidad,
+          precio: item.PrecioUnitario,
+        }));
+      }
     }
   } catch (err) {
     return { success: false, mensaje: `Error al obtener el comprobante: ${err instanceof Error ? err.message : "error desconocido"}` };
@@ -333,7 +352,8 @@ export async function importarDesdeContabilium(params: {
   };
 
   const tipoOrden: TipoOrden = tipoOrdenMap[tipoFc] ?? "factura_b";
-  const fechaEntregaEstimada = calcularFechaEntrega(fechaVenta, tipoProducto, 1);
+  const cantidadTotal = productos.reduce((s, p) => s + p.cantidad, 0) || 1;
+  const fechaEntregaEstimada = calcularFechaEntrega(fechaVenta, tipoProducto, cantidadTotal);
 
   // Verificar si ya existe (por referencia)
   const [existing] = await db
@@ -343,6 +363,27 @@ export async function importarDesdeContabilium(params: {
     .limit(1);
 
   if (existing) {
+    // Si ya existe pero sin productos, actualizar los items
+    if (productos.length > 0) {
+      const [existingFull] = await db
+        .select({ productos: orders.productos })
+        .from(orders)
+        .where(eq(orders.id, existing.id))
+        .limit(1);
+
+      if (!existingFull?.productos || (Array.isArray(existingFull.productos) && existingFull.productos.length === 0)) {
+        await db
+          .update(orders)
+          .set({ productos, updatedAt: new Date() })
+          .where(eq(orders.id, existing.id));
+        revalidatePath("/");
+        return {
+          success: true,
+          mensaje: `${referencia} actualizado con ${productos.length} producto(s)`,
+          orderId: existing.id,
+        };
+      }
+    }
     return {
       success: false,
       mensaje: `Ya existe un pedido con la referencia ${referencia}`,
@@ -361,7 +402,7 @@ export async function importarDesdeContabilium(params: {
       clienteEmail,
       clienteTel,
       clienteDni: null,
-      productos: null,
+      productos: productos.length > 0 ? productos : null,
       envioTipo: null,
       envioDireccion: null,
       pagoTipo: null,
