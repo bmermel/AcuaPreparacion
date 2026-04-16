@@ -5,20 +5,28 @@ import { redirect } from "next/navigation";
 import {
   buscarComprobantes,
   buscarOrdenesVenta,
+  parsearMontoAR,
+  parsearFechaDDMMYYYY,
   type TipoFc,
-  type ComprobanteResumen,
-  type OrdenVentaResumen,
 } from "@/lib/contabilium";
 import { importarDesdeContabilium } from "@/lib/actions";
 import type { TipoProducto } from "@/lib/db/schema";
 
-type DocumentoConTipo = (ComprobanteResumen | OrdenVentaResumen) & { _tipoFc: TipoFc };
+/** Formato normalizado que el cliente muestra */
+export type DocumentoNormalizado = {
+  id: number;
+  tipoFc: TipoFc;
+  numero: string;
+  razonSocial: string;
+  fechaEmision: string;   // ISO string para consistencia
+  monto: number;
+};
 
 export async function buscarContabilium(params: {
   fechaDesde: string;
   fechaHasta: string;
   tipos: TipoFc[];
-}): Promise<{ documentos: DocumentoConTipo[] } | { error: string }> {
+}): Promise<{ documentos: DocumentoNormalizado[] } | { error: string }> {
   const session = await auth();
   if (!session) redirect("/login");
   if (session.user.rol !== "admin") return { error: "Sin permiso" };
@@ -26,18 +34,24 @@ export async function buscarContabilium(params: {
   const { fechaDesde, fechaHasta, tipos } = params;
 
   try {
-    const resultados: DocumentoConTipo[] = [];
+    const resultados: DocumentoNormalizado[] = [];
 
     // Buscar comprobantes (FCA, FCB, COT)
     const tiposComprobante = tipos.filter((t) => t !== "OV") as ("FCA" | "FCB" | "COT")[];
     if (tiposComprobante.length > 0) {
-      // Traer todos y filtrar por tipo en cliente
       const res = await buscarComprobantes({ fechaDesde, fechaHasta });
       const items = (res.Items ?? []).filter((item) =>
         tiposComprobante.includes(item.TipoFc as "FCA" | "FCB" | "COT")
       );
       for (const item of items) {
-        resultados.push({ ...item, _tipoFc: item.TipoFc as TipoFc });
+        resultados.push({
+          id: item.Id,
+          tipoFc: item.TipoFc as TipoFc,
+          numero: item.Numero,
+          razonSocial: item.RazonSocial,
+          fechaEmision: item.FechaEmision,
+          monto: parsearMontoAR(item.ImporteTotalNeto),
+        });
       }
     }
 
@@ -46,13 +60,22 @@ export async function buscarContabilium(params: {
       const res = await buscarOrdenesVenta({ fechaDesde, fechaHasta });
       const items = res.Items ?? [];
       for (const item of items) {
-        resultados.push({ ...item, _tipoFc: "OV" as TipoFc });
+        resultados.push({
+          id: item.ID,
+          tipoFc: "OV",
+          numero: item.NumeroOrden,
+          razonSocial: item.Comprador,
+          fechaEmision: item.FechaCreacion.includes("T")
+            ? item.FechaCreacion
+            : parsearFechaDDMMYYYY(item.FechaCreacion).toISOString(),
+          monto: parsearMontoAR(item.Total),
+        });
       }
     }
 
     // Ordenar por fecha desc
     resultados.sort(
-      (a, b) => new Date(b.FechaEmision).getTime() - new Date(a.FechaEmision).getTime()
+      (a, b) => new Date(b.fechaEmision).getTime() - new Date(a.fechaEmision).getTime()
     );
 
     return { documentos: resultados };

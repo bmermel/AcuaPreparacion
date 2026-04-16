@@ -292,7 +292,7 @@ export async function importarDesdeContabilium(params: {
 
   const { id, tipoFc, tipoProducto } = params;
 
-  const { getComprobanteById, getOrdenVentaById } = await import("./contabilium");
+  const { getComprobanteById, getOrdenVentaById, parsearMontoAR, parsearFechaDDMMYYYY } = await import("./contabilium");
 
   let referencia: string;
   let clienteNombre: string | null = null;
@@ -304,19 +304,21 @@ export async function importarDesdeContabilium(params: {
   try {
     if (tipoFc === "OV") {
       const ov = await getOrdenVentaById(id);
-      referencia = ov.Numero;
-      clienteNombre = ov.RazonSocial || null;
+      referencia = ov.NumeroOrden;
+      clienteNombre = ov.Comprador || null;
       clienteEmail = ov.Email || null;
       clienteTel = ov.Telefono || null;
-      precio = String(ov.ImporteTotal);
-      fechaVenta = new Date(ov.FechaEmision);
+      precio = String(parsearMontoAR(ov.Total));
+      fechaVenta = ov.FechaCreacion.includes("T")
+        ? new Date(ov.FechaCreacion)
+        : parsearFechaDDMMYYYY(ov.FechaCreacion);
     } else {
       const comp = await getComprobanteById(id);
       referencia = comp.Numero;
       clienteNombre = comp.RazonSocial || null;
       clienteEmail = comp.Email || null;
       clienteTel = comp.Telefono || null;
-      precio = String(comp.ImporteTotalNeto);
+      precio = String(parsearMontoAR(comp.ImporteTotalNeto));
       fechaVenta = new Date(comp.FechaEmision);
     }
   } catch (err) {

@@ -65,12 +65,12 @@ async function apiFetch(path: string): Promise<unknown> {
 export type TipoFc = "FCA" | "FCB" | "COT" | "OV";
 
 export interface ComprobanteResumen {
-  ID: number;
+  Id: number;
   RazonSocial: string;
-  FechaEmision: string;   // "YYYY-MM-DDT00:00:00"
-  Numero: string;         // "FCA 0001-00001234"
-  ImporteTotalNeto: number;
-  TipoFc: string;         // "FCA", "FCB", "COT", etc.
+  FechaEmision: string;      // "YYYY-MM-DDT00:00:00"
+  Numero: string;            // "0007-00065017"
+  ImporteTotalNeto: string;  // "493.023,46" (string con formato AR)
+  TipoFc: string;            // "FCA", "FCB", "COT", etc.
 }
 
 export interface ComprobanteItem {
@@ -82,34 +82,34 @@ export interface ComprobanteItem {
 }
 
 export interface ComprobanteDetalle {
-  ID: number;
+  Id: number;
   RazonSocial: string;
   Email: string | null;
   Telefono: string | null;
   FechaEmision: string;
   Numero: string;
   TipoFc: string;
-  ImporteTotalNeto: number;
+  ImporteTotalNeto: string;
   Items: ComprobanteItem[];
 }
 
 export interface OrdenVentaResumen {
   ID: number;
-  RazonSocial: string;
-  FechaEmision: string;
-  Numero: string;
-  ImporteTotal: number;
+  Comprador: string;
+  FechaCreacion: string;   // "DD/MM/YYYY"
+  NumeroOrden: string;     // "00004122"
+  Total: string;           // "2.720,00"
   Estado: string;
 }
 
 export interface OrdenVentaDetalle {
   ID: number;
-  RazonSocial: string;
+  Comprador: string;
   Email: string | null;
   Telefono: string | null;
-  FechaEmision: string;
-  Numero: string;
-  ImporteTotal: number;
+  FechaCreacion: string;
+  NumeroOrden: string;
+  Total: string;
   Estado: string;
   Items: ComprobanteItem[];
 }
@@ -185,10 +185,27 @@ export async function getOrdenVentaById(id: number): Promise<OrdenVentaDetalle> 
   return data as OrdenVentaDetalle;
 }
 
-// ─── Helper: formatear fecha Contabilium ─────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Parsea montos en formato AR ("493.023,46") a number */
+export function parsearMontoAR(str: string | number | null | undefined): number {
+  if (str == null) return 0;
+  if (typeof str === "number") return str;
+  // Quitar puntos de miles, cambiar coma decimal a punto
+  const limpio = str.replace(/\./g, "").replace(",", ".");
+  const n = parseFloat(limpio);
+  return isNaN(n) ? 0 : n;
+}
+
+/** Parsea fecha DD/MM/YYYY a Date */
+export function parsearFechaDDMMYYYY(str: string): Date {
+  const [d, m, y] = str.split("/");
+  return new Date(`${y}-${m}-${d}T00:00:00`);
+}
 
 export function formatFechaContabilium(fechaStr: string): string {
-  const fecha = new Date(fechaStr);
+  // Puede venir como "YYYY-MM-DDT00:00:00" o "DD/MM/YYYY"
+  const fecha = fechaStr.includes("T") ? new Date(fechaStr) : parsearFechaDDMMYYYY(fechaStr);
   return fecha.toLocaleDateString("es-AR", {
     day: "2-digit",
     month: "2-digit",
