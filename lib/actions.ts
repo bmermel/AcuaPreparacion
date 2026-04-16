@@ -128,6 +128,35 @@ export async function guardarNotas(orderId: string, notas: string) {
   revalidatePath(`/orders/${orderId}`);
 }
 
+// ─── Guardar datos del cliente ────────────────────────────────────────────────
+
+export async function guardarDatosCliente(
+  orderId: string,
+  datos: {
+    clienteNombre: string | null;
+    clienteEmail: string | null;
+    clienteTel: string | null;
+    clienteDni: string | null;
+  }
+) {
+  const session = await auth();
+  if (!session) redirect("/login");
+
+  await db
+    .update(orders)
+    .set({
+      clienteNombre: datos.clienteNombre || null,
+      clienteEmail: datos.clienteEmail || null,
+      clienteTel: datos.clienteTel || null,
+      clienteDni: datos.clienteDni || null,
+      updatedAt: new Date(),
+    })
+    .where(eq(orders.id, orderId));
+
+  revalidatePath("/");
+  revalidatePath(`/orders/${orderId}`);
+}
+
 // ─── Crear pedido manual ──────────────────────────────────────────────────────
 
 export async function crearPedidoManual(formData: FormData) {

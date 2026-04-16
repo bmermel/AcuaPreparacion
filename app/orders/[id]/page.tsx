@@ -6,6 +6,7 @@ import { orders, orderHistory } from "@/lib/db/schema";
 import type { Producto, DireccionEnvio } from "@/lib/db/schema";
 import { StatusStepper } from "@/components/status-stepper";
 import { OrderActions } from "@/components/order-actions";
+import { ClientEditor } from "@/components/client-editor";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -75,40 +76,8 @@ export default async function OrderDetailPage({ params }: Props) {
         {/* Acciones de estado + notas */}
         <OrderActions order={order} />
 
-        {/* Cliente */}
-        {(order.clienteNombre || order.clienteEmail || order.clienteTel || order.clienteDni) && (
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Cliente
-            </p>
-            <div className="space-y-1.5">
-              {order.clienteNombre && (
-                <p className="text-sm font-medium text-gray-800">{order.clienteNombre}</p>
-              )}
-              {order.clienteEmail && (
-                <p className="text-xs text-gray-500">
-                  <span className="text-gray-400">✉️</span>{" "}
-                  <a href={`mailto:${order.clienteEmail}`} className="hover:underline">
-                    {order.clienteEmail}
-                  </a>
-                </p>
-              )}
-              {order.clienteTel && (
-                <p className="text-xs text-gray-500">
-                  <span className="text-gray-400">📞</span>{" "}
-                  <a href={`tel:${order.clienteTel}`} className="hover:underline">
-                    {order.clienteTel}
-                  </a>
-                </p>
-              )}
-              {order.clienteDni && (
-                <p className="text-xs text-gray-500">
-                  <span className="text-gray-400">🪪</span> DNI: {order.clienteDni}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Cliente (editable) */}
+        <ClientEditor order={order} />
 
         {/* Productos */}
         {productos.length > 0 && (
