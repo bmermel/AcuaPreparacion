@@ -1,53 +1,21 @@
 import type { TipoProducto } from "./db/schema";
 
-// Horario de trabajo: L-V 10:00–18:00 (8hs), Sáb 10:00–14:00 (4hs), Dom cerrado
+/**
+ * Cálculo de fecha estimada de entrega.
+ *
+ * "Horas hábiles" = horas de día hábil, no de horario de atención:
+ *   - Lunes a viernes: 24 horas cada día
+ *   - Sábado: 12 horas (medio día)
+ *   - Domingo: 0 horas (no cuenta)
+ *
+ * Notebooks (≤5 unidades): 48 horas hábiles
+ * Computadoras / Varios: 72 horas hábiles
+ */
 
-const APERTURA = 10; // 10:00
-const CIERRE_SEMANA = 18; // 18:00
-const CIERRE_SABADO = 14; // 14:00
-
-function minutosHabilesEnDia(fecha: Date): number {
-  const dia = fecha.getDay(); // 0=Dom, 6=Sáb
-  if (dia === 0) return 0;
-  if (dia === 6) return (CIERRE_SABADO - APERTURA) * 60;
-  return (CIERRE_SEMANA - APERTURA) * 60;
-}
-
-function cierreDelDia(fecha: Date): number {
-  const dia = fecha.getDay();
-  if (dia === 6) return CIERRE_SABADO;
-  return CIERRE_SEMANA;
-}
-
-// Avanza la fecha al próximo instante de apertura si está fuera de horario
-function normalizarInicio(fecha: Date): Date {
-  const d = new Date(fecha);
-  const dia = d.getDay();
-  const hora = d.getHours() + d.getMinutes() / 60;
-
-  // Domingo → lunes 10:00
-  if (dia === 0) {
-    d.setDate(d.getDate() + 1);
-    d.setHours(APERTURA, 0, 0, 0);
-    return d;
-  }
-
-  const cierre = cierreDelDia(d);
-
-  // Después del cierre → próximo día hábil a las 10:00
-  if (hora >= cierre) {
-    d.setDate(d.getDate() + (dia === 6 ? 2 : 1)); // Sáb → Lun
-    d.setHours(APERTURA, 0, 0, 0);
-    return d;
-  }
-
-  // Antes de apertura → mismo día a las 10:00
-  if (hora < APERTURA) {
-    d.setHours(APERTURA, 0, 0, 0);
-    return d;
-  }
-
-  return d;
+function horasHabilesEnDia(diaSemana: number): number {
+  if (diaSemana === 0) return 0;  // Domingo
+  if (diaSemana === 6) return 12; // Sábado = medio día
+  return 24;                       // Lunes a viernes
 }
 
 export function calcularFechaEntrega(
@@ -58,39 +26,33 @@ export function calcularFechaEntrega(
   const horasHabiles =
     tipoProducto === "notebook" && cantidadTotal <= 5 ? 48 : 72;
 
-  let minutosRestantes = horasHabiles * 60;
-  const d = normalizarInicio(new Date(fechaInicio));
+  let horasRestantes = horasHabiles;
+  const d = new Date(fechaInicio);
 
-  while (minutosRestantes > 0) {
+  // Si cae domingo, avanzar al lunes
+  if (d.getDay() === 0) {
+    d.setDate(d.getDate() + 1);
+    d.setHours(0, 0, 0, 0);
+  }
+
+  while (horasRestantes > 0) {
     const dia = d.getDay();
+    const horasDelDia = horasHabilesEnDia(dia);
 
-    if (dia === 0) {
-      // Domingo: saltar al lunes 10:00
+    if (horasDelDia === 0) {
+      // Domingo: saltar
       d.setDate(d.getDate() + 1);
-      d.setHours(APERTURA, 0, 0, 0);
+      d.setHours(0, 0, 0, 0);
       continue;
     }
 
-    const cierre = cierreDelDia(d);
-    const horaActual = d.getHours() + d.getMinutes() / 60;
-
-    if (horaActual >= cierre) {
-      // Pasó el cierre: ir al próximo día hábil
-      d.setDate(d.getDate() + (dia === 6 ? 2 : 1));
-      d.setHours(APERTURA, 0, 0, 0);
-      continue;
-    }
-
-    // Minutos disponibles hasta el cierre hoy
-    const minutosHastacierre = (cierre - horaActual) * 60;
-
-    if (minutosRestantes <= minutosHastacierre) {
-      d.setMinutes(d.getMinutes() + minutosRestantes);
-      minutosRestantes = 0;
+    if (horasRestantes >= horasDelDia) {
+      horasRestantes -= horasDelDia;
+      d.setDate(d.getDate() + 1);
+      d.setHours(0, 0, 0, 0);
     } else {
-      minutosRestantes -= minutosHastacierre;
-      d.setDate(d.getDate() + (dia === 6 ? 2 : 1));
-      d.setHours(APERTURA, 0, 0, 0);
+      d.setHours(d.getHours() + horasRestantes);
+      horasRestantes = 0;
     }
   }
 
