@@ -40,6 +40,7 @@ export default function ContabiliumClient() {
   const [fechaDesde, setFechaDesde] = useState(haceNDias(7));
   const [fechaHasta, setFechaHasta] = useState(hoy);
   const [tiposSeleccionados, setTiposSeleccionados] = useState<TipoFc[]>(["FCA", "FCB", "COT", "OV"]);
+  const [filtro, setFiltro] = useState("");
   const [documentos, setDocumentos] = useState<DocumentoNormalizado[]>([]);
   const [isPending, startBusqueda] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +66,7 @@ export default function ContabiliumClient() {
 
     startBusqueda(async () => {
       try {
-        const result = await buscarContabilium({ fechaDesde, fechaHasta, tipos: tiposSeleccionados });
+        const result = await buscarContabilium({ fechaDesde, fechaHasta, tipos: tiposSeleccionados, filtro: filtro.trim() });
         if ("error" in result) {
           setError(result.error);
         } else {
@@ -167,6 +168,17 @@ export default function ContabiliumClient() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Buscar por numero o cliente</label>
+              <input
+                type="text"
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                placeholder="Ej: 0007-00065017, Perez, etc."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
 
             <button

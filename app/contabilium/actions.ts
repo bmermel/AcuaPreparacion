@@ -26,12 +26,13 @@ export async function buscarContabilium(params: {
   fechaDesde: string;
   fechaHasta: string;
   tipos: TipoFc[];
+  filtro?: string;
 }): Promise<{ documentos: DocumentoNormalizado[] } | { error: string }> {
   const session = await auth();
   if (!session) redirect("/login");
   if (session.user.rol !== "admin") return { error: "Sin permiso" };
 
-  const { fechaDesde, fechaHasta, tipos } = params;
+  const { fechaDesde, fechaHasta, tipos, filtro = "" } = params;
 
   try {
     const resultados: DocumentoNormalizado[] = [];
@@ -39,7 +40,7 @@ export async function buscarContabilium(params: {
     // Buscar comprobantes (FCA, FCB, COT)
     const tiposComprobante = tipos.filter((t) => t !== "OV") as ("FCA" | "FCB" | "COT")[];
     if (tiposComprobante.length > 0) {
-      const res = await buscarComprobantes({ fechaDesde, fechaHasta });
+      const res = await buscarComprobantes({ fechaDesde, fechaHasta, filtro });
       const items = (res.Items ?? []).filter((item) =>
         tiposComprobante.includes(item.TipoFc as "FCA" | "FCB" | "COT")
       );
@@ -57,7 +58,7 @@ export async function buscarContabilium(params: {
 
     // Buscar órdenes de venta
     if (tipos.includes("OV")) {
-      const res = await buscarOrdenesVenta({ fechaDesde, fechaHasta });
+      const res = await buscarOrdenesVenta({ fechaDesde, fechaHasta, filtro });
       const items = res.Items ?? [];
       for (const item of items) {
         resultados.push({
