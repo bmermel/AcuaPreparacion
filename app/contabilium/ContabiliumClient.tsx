@@ -19,6 +19,20 @@ const TIPO_PRODUCTO_LABELS: Record<TipoProducto, string> = {
   varios: "🗂️ Varios",
 };
 
+const ESTADO_LABELS: Record<string, string> = {
+  pendiente: "Pendiente",
+  preparacion: "En preparacion",
+  listo: "Listo",
+  despachado: "Despachado",
+};
+
+const ESTADO_COLORS: Record<string, string> = {
+  pendiente: "bg-yellow-100 text-yellow-800 border-yellow-300",
+  preparacion: "bg-blue-100 text-blue-800 border-blue-300",
+  listo: "bg-green-100 text-green-800 border-green-300",
+  despachado: "bg-gray-100 text-gray-600 border-gray-300",
+};
+
 function formatFecha(str: string): string {
   const d = new Date(str);
   if (isNaN(d.getTime())) return str;
@@ -208,7 +222,8 @@ export default function ContabiliumClient() {
             {documentos.map((doc) => {
               const state = importStates[doc.id] ?? { tipoProducto: "notebook" as TipoProducto, isPending: false, resultado: null };
               const yaImportado = state.resultado?.success === true;
-              const duplicado = state.resultado?.success === false && state.resultado?.orderId;
+              const existeEnAcua = doc.existeEnAcua;
+              const mostrandoImportar = importStates[doc.id]?.resultado !== undefined;
 
               return (
                 <div key={`${doc.tipoFc}-${doc.id}`} className="px-4 py-4">
@@ -219,6 +234,11 @@ export default function ContabiliumClient() {
                           {TIPO_LABELS[doc.tipoFc]}
                         </span>
                         <span className="text-sm font-semibold text-gray-900">{doc.numero}</span>
+                        {existeEnAcua && !yaImportado && (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${ESTADO_COLORS[existeEnAcua.estado] ?? "bg-gray-100 text-gray-600 border-gray-300"}`}>
+                            Ya cargado — {ESTADO_LABELS[existeEnAcua.estado] ?? existeEnAcua.estado}
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-700 mt-1 truncate">{doc.razonSocial}</p>
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
@@ -228,7 +248,36 @@ export default function ContabiliumClient() {
                     </div>
                   </div>
 
-                  {!yaImportado && !duplicado && (
+                  {/* Ya existe: mostrar link + botón "Importar igual" */}
+                  {existeEnAcua && !yaImportado && !mostrandoImportar && (
+                    <div className="mt-3 flex items-center gap-3 flex-wrap">
+                      <Link href={`/orders/${existeEnAcua.orderId}`} className="text-xs text-blue-600 hover:underline">
+                        Ver pedido →
+                      </Link>
+                      <span className="text-xs text-gray-300">|</span>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={state.tipoProducto}
+                          onChange={(e) => setTipoProductoDoc(doc.id, e.target.value as TipoProducto)}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        >
+                          {(Object.keys(TIPO_PRODUCTO_LABELS) as TipoProducto[]).map((k) => (
+                            <option key={k} value={k}>{TIPO_PRODUCTO_LABELS[k]}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleImportar(doc)}
+                          disabled={state.isPending}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-xs font-medium rounded-lg transition-colors"
+                        >
+                          {state.isPending ? "Importando..." : "Importar igual"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No existe: importar normalmente */}
+                  {!existeEnAcua && !yaImportado && !mostrandoImportar && (
                     <div className="mt-3 flex items-center gap-2">
                       <select
                         value={state.tipoProducto}
@@ -249,6 +298,7 @@ export default function ContabiliumClient() {
                     </div>
                   )}
 
+                  {/* Resultado exitoso */}
                   {yaImportado && state.resultado && (
                     <div className="mt-3 flex items-center gap-3">
                       <span className="text-xs text-green-700 font-medium">✅ {state.resultado.mensaje}</span>
@@ -260,20 +310,15 @@ export default function ContabiliumClient() {
                     </div>
                   )}
 
-                  {duplicado && state.resultado && (
+                  {/* Resultado error */}
+                  {state.resultado?.success === false && (
                     <div className="mt-3 flex items-center gap-3">
-                      <span className="text-xs text-amber-700 font-medium">⚠️ {state.resultado.mensaje}</span>
+                      <span className="text-xs text-red-600">❌ {state.resultado.mensaje}</span>
                       {state.resultado.orderId && (
                         <Link href={`/orders/${state.resultado.orderId}`} className="text-xs text-blue-600 hover:underline">
                           Ver pedido →
                         </Link>
                       )}
-                    </div>
-                  )}
-
-                  {state.resultado?.success === false && !state.resultado?.orderId && (
-                    <div className="mt-3">
-                      <span className="text-xs text-red-600">❌ {state.resultado.mensaje}</span>
                     </div>
                   )}
                 </div>

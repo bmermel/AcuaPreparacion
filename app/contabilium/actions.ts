@@ -11,6 +11,9 @@ import {
 } from "@/lib/contabilium";
 import { importarDesdeContabilium } from "@/lib/actions";
 import type { TipoProducto } from "@/lib/db/schema";
+import { db } from "@/lib/db";
+import { orders } from "@/lib/db/schema";
+import { inArray } from "drizzle-orm";
 
 /** Formato normalizado que el cliente muestra */
 export type DocumentoNormalizado = {
@@ -20,6 +23,10 @@ export type DocumentoNormalizado = {
   razonSocial: string;
   fechaEmision: string;   // ISO string para consistencia
   monto: number;
+  existeEnAcua?: {
+    orderId: string;
+    estado: string;
+  } | null;
 };
 
 export async function buscarContabilium(params: {
@@ -71,6 +78,27 @@ export async function buscarContabilium(params: {
             : parsearFechaDDMMYYYY(item.FechaCreacion).toISOString(),
           monto: parsearMontoAR(item.Total),
         });
+      }
+    }
+
+    // Verificar cuáles ya existen en Acua
+    if (resultados.length > 0) {
+      const referencias = resultados.map((r) => r.numero);
+      const existentes = await db
+        .select({
+          id: orders.id,
+          referencia: orders.referencia,
+          estado: orders.estado,
+        })
+        .from(orders)
+        .where(inArray(orders.referencia, referencias));
+
+      const mapaExistentes = new Map(
+        existentes.map((e) => [e.referencia, { orderId: e.id, estado: e.estado }])
+      );
+
+      for (const doc of resultados) {
+        doc.existeEnAcua = mapaExistentes.get(doc.numero) ?? null;
       }
     }
 
