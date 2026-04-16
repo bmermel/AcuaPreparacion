@@ -117,7 +117,7 @@ export default function ContabiliumClient() {
   function setTipoProductoDoc(docId: number, tipoProducto: TipoProducto) {
     setImportStates((prev) => ({
       ...prev,
-      [docId]: { tipoProducto, isPending: false, resultado: null, ...(prev[docId] ?? {}) },
+      [docId]: { ...(prev[docId] ?? {}), tipoProducto, isPending: false, resultado: null },
     }));
   }
 

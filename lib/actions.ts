@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { orders, reglasProducto } from "./db/schema";
+import { orders, reglasProducto, orderHistory } from "./db/schema";
 import type { EstadoOrden, TipoOrden, TipoProducto, NewOrder } from "./db/schema";
 import { auth } from "./auth";
 import { redirect } from "next/navigation";
-import { sendPedidoListoEmail } from "./email";
+import { sendPedidoListoEmail, sendPedidoListoEnvioEmail } from "./email";
+import { sendPedidoListoWhatsApp } from "./whatsapp";
 import { calcularFechaEntrega } from "./delivery";
 import { fetchQloudOrder, qloudOrderToNewOrder } from "./qloud";
 
@@ -37,13 +38,38 @@ export async function avanzarEstado(orderId: string) {
     .set({ estado: nuevoEstado, updatedAt: new Date() })
     .where(eq(orders.id, orderId));
 
-  // Email automático cuando pasa a "listo" y es retiro en local
-  if (nuevoEstado === "listo" && order.envioTipo === "retiro" && order.clienteEmail) {
-    sendPedidoListoEmail({
-      clienteEmail: order.clienteEmail,
-      clienteNombre: order.clienteNombre,
-      referencia: order.referencia,
-    }).catch(console.error);
+  // Registrar en historial
+  await db.insert(orderHistory).values({
+    orderId,
+    userId: session.user.id,
+    userName: session.user.name ?? "Usuario",
+    estadoAnterior: order.estado,
+    estadoNuevo: nuevoEstado,
+  });
+
+  // Notificaciones automáticas cuando pasa a "listo"
+  if (nuevoEstado === "listo") {
+    // Email
+    if (order.clienteEmail) {
+      const emailFn = order.envioTipo === "domicilio"
+        ? sendPedidoListoEnvioEmail
+        : sendPedidoListoEmail;
+      emailFn({
+        clienteEmail: order.clienteEmail,
+        clienteNombre: order.clienteNombre,
+        referencia: order.referencia,
+      }).catch(console.error);
+    }
+
+    // WhatsApp
+    if (order.clienteTel) {
+      sendPedidoListoWhatsApp({
+        clienteTel: order.clienteTel,
+        clienteNombre: order.clienteNombre,
+        referencia: order.referencia,
+        esRetiro: order.envioTipo === "retiro",
+      }).catch(console.error);
+    }
   }
 
   revalidatePath("/");
@@ -73,6 +99,15 @@ export async function retrocederEstado(orderId: string) {
     .update(orders)
     .set({ estado: estadoAnterior, updatedAt: new Date() })
     .where(eq(orders.id, orderId));
+
+  // Registrar en historial
+  await db.insert(orderHistory).values({
+    orderId,
+    userId: session.user.id,
+    userName: session.user.name ?? "Usuario",
+    estadoAnterior: order.estado,
+    estadoNuevo: estadoAnterior,
+  });
 
   revalidatePath("/");
   revalidatePath(`/orders/${orderId}`);

@@ -82,6 +82,21 @@ export const reglasProducto = pgTable("reglas_producto", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ─── Historial de cambios ────────────────────────────────────────────────────
+
+export const orderHistory = pgTable("order_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orderId: uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull(),
+  userName: text("user_name").notNull(),
+  estadoAnterior: estadoEnum("estado_anterior"),
+  estadoNuevo: estadoEnum("estado_nuevo"),
+  campo: text("campo"),
+  valorAnterior: text("valor_anterior"),
+  valorNuevo: text("valor_nuevo"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // ─── Tipos TypeScript ─────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
@@ -89,6 +104,7 @@ export type NewUser = typeof users.$inferInsert;
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type ReglaProducto = typeof reglasProducto.$inferSelect;
+export type OrderHistoryEntry = typeof orderHistory.$inferSelect;
 
 export type Producto = {
   sku: string;

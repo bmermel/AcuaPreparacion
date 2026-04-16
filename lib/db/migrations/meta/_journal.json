@@ -15,6 +15,13 @@
       "when": 1775781420846,
       "tag": "0001_sharp_spirit",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776307980944,
+      "tag": "0002_adorable_ink",
+      "breakpoints": true
     }
   ]
 }

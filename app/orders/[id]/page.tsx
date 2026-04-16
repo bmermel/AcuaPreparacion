@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders } from "@/lib/db/schema";
+import { orders, orderHistory } from "@/lib/db/schema";
 import type { Producto, DireccionEnvio } from "@/lib/db/schema";
 import { StatusStepper } from "@/components/status-stepper";
 import { OrderActions } from "@/components/order-actions";
@@ -27,6 +27,12 @@ export default async function OrderDetailPage({ params }: Props) {
     .limit(1);
 
   if (!order) notFound();
+
+  const historial = await db
+    .select()
+    .from(orderHistory)
+    .where(eq(orderHistory.orderId, id))
+    .orderBy(desc(orderHistory.createdAt));
 
   const productos = (order.productos as Producto[]) ?? [];
   const direccion = order.envioDireccion as DireccionEnvio | null;
@@ -233,6 +239,43 @@ export default async function OrderDetailPage({ params }: Props) {
             </div>
           </div>
         </div>
+
+        {/* Historial de cambios */}
+        {historial.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              Historial de cambios
+            </p>
+            <div className="space-y-3">
+              {historial.map((h) => (
+                <div key={h.id} className="flex gap-3 items-start">
+                  <div className="w-2 h-2 rounded-full bg-blue-400 mt-1.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-700">
+                      <span className="font-medium">{h.userName}</span>
+                      {h.estadoAnterior && h.estadoNuevo ? (
+                        <> cambió de <span className="font-medium">{h.estadoAnterior}</span> a <span className="font-medium">{h.estadoNuevo}</span></>
+                      ) : h.campo ? (
+                        <> modificó <span className="font-medium">{h.campo}</span></>
+                      ) : (
+                        <> realizó un cambio</>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {new Date(h.createdAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Zona peligrosa */}
         <div className="bg-white rounded-xl border border-red-100 p-4">

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { desc, eq, and, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
-import { OrderCard } from "@/components/order-card";
+import { SearchableOrderGrid } from "@/components/searchable-order-grid";
 import { signOut, auth } from "@/lib/auth";
 import type { EstadoOrden } from "@/lib/db/schema";
 
@@ -118,6 +118,12 @@ export default async function DashboardPage({ searchParams }: Props) {
                 >
                   Contabilium
                 </Link>
+                <Link
+                  href="/metricas"
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+                >
+                  Métricas
+                </Link>
               </>
             )}
             <form
@@ -198,19 +204,8 @@ export default async function DashboardPage({ searchParams }: Props) {
           )}
         </div>
 
-        {/* Grid de pedidos */}
-        {pedidos.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <p className="text-4xl mb-3">📭</p>
-            <p className="text-sm">No hay pedidos en esta sección</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {pedidos.map((order) => (
-              <OrderCard key={order.id} order={order} />
-            ))}
-          </div>
-        )}
+        {/* Buscador + Grid de pedidos */}
+        <SearchableOrderGrid pedidos={pedidos} />
       </main>
     </div>
   );
