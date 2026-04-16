@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
@@ -18,8 +19,14 @@ export async function POST(req: NextRequest) {
 
   const qloudId = Number(body.resource);
 
-  // Responder 200 inmediatamente (Qloud requiere respuesta rápida)
-  procesarOrden(qloudId).catch(console.error);
+  // Procesar la orden después de enviar la respuesta (Vercel mantiene la función viva)
+  after(async () => {
+    try {
+      await procesarOrden(qloudId);
+    } catch (err) {
+      console.error("[webhook] Error procesando orden:", err);
+    }
+  });
 
   return NextResponse.json({ ok: true });
 }
