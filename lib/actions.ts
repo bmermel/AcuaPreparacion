@@ -428,9 +428,11 @@ export async function importarDesdeContabilium(params: {
 export async function eliminarPedido(orderId: string) {
   const session = await auth();
   if (!session) redirect("/login");
+  if (session.user.rol !== "admin") {
+    throw new Error("Solo los administradores pueden eliminar pedidos");
+  }
 
   await db.delete(orders).where(eq(orders.id, orderId));
 
   revalidatePath("/");
-  redirect("/");
 }

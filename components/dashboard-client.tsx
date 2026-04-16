@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import type { Order, EstadoOrden, TipoProducto } from "@/lib/db/schema";
 import { OrderCard } from "./order-card";
 
@@ -30,6 +30,8 @@ export function DashboardClient({ pedidos, rol }: Props) {
     rol === "tecnico" ? "pendiente" : "todos"
   );
   const [busqueda, setBusqueda] = useState("");
+  const [modoSeleccion, setModoSeleccion] = useState(false);
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
 
   const termino = busqueda.toLowerCase().trim();
 
@@ -55,7 +57,6 @@ export function DashboardClient({ pedidos, rol }: Props) {
   // Filtrar por estado
   const porEstado = useMemo(() => {
     if (estado === "todos") {
-      // Técnicos: excluir despachados en "todos"
       return rol === "tecnico"
         ? porSeccion.filter((o) => o.estado !== "despachado")
         : porSeccion;
@@ -77,6 +78,51 @@ export function DashboardClient({ pedidos, rol }: Props) {
     rol === "admin"
       ? ESTADOS
       : ESTADOS.filter((e) => e.key !== "despachado");
+
+  const toggleSeleccion = useCallback((id: string) => {
+    setSeleccionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const seleccionarTodos = useCallback(() => {
+    setSeleccionados(new Set(filtrados.map((o) => o.id)));
+  }, [filtrados]);
+
+  const deseleccionarTodos = useCallback(() => {
+    setSeleccionados(new Set());
+  }, []);
+
+  function toggleModoSeleccion() {
+    if (modoSeleccion) {
+      setSeleccionados(new Set());
+    }
+    setModoSeleccion(!modoSeleccion);
+  }
+
+  function imprimirSeleccionados() {
+    if (seleccionados.size === 0) return;
+    const ids = Array.from(seleccionados).join(",");
+    window.open(`/print?ids=${ids}`, "_blank");
+  }
+
+  function imprimirTodosVisibles() {
+    if (filtrados.length === 0) return;
+    const ids = filtrados.map((o) => o.id).join(",");
+    window.open(`/print?ids=${ids}`, "_blank");
+  }
+
+  function imprimirUno(id: string) {
+    window.open(`/print?ids=${id}`, "_blank");
+  }
+
+  const todosSeleccionados = filtrados.length > 0 && seleccionados.size === filtrados.length;
 
   return (
     <>
@@ -137,16 +183,63 @@ export function DashboardClient({ pedidos, rol }: Props) {
         )}
       </div>
 
-      {/* Buscador */}
-      <div className="mb-4">
+      {/* Buscador + botones de impresión */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <input
           type="text"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar por referencia, cliente, teléfono o email..."
-          className="w-full max-w-md px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
+          className="flex-1 min-w-[200px] max-w-md px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
         />
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleModoSeleccion}
+            className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors ${
+              modoSeleccion
+                ? "bg-blue-50 text-blue-700 border-blue-300"
+                : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
+            }`}
+          >
+            {modoSeleccion ? "Cancelar seleccion" : "Seleccionar"}
+          </button>
+
+          {!modoSeleccion && filtrados.length > 0 && (
+            <button
+              onClick={imprimirTodosVisibles}
+              className="px-3 py-2 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600 transition-colors"
+              title="Imprimir todos los pedidos visibles"
+            >
+              🖨️ Imprimir todos ({filtrados.length})
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Barra de selección */}
+      {modoSeleccion && (
+        <div className="mb-4 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+          <span className="text-xs text-blue-700 font-medium">
+            {seleccionados.size} seleccionado{seleccionados.size !== 1 ? "s" : ""}
+          </span>
+
+          <button
+            onClick={todosSeleccionados ? deseleccionarTodos : seleccionarTodos}
+            className="text-xs text-blue-600 hover:text-blue-800 underline transition-colors"
+          >
+            {todosSeleccionados ? "Deseleccionar todos" : `Seleccionar todos (${filtrados.length})`}
+          </button>
+
+          <button
+            onClick={imprimirSeleccionados}
+            disabled={seleccionados.size === 0}
+            className="ml-auto px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            🖨️ Imprimir seleccionados ({seleccionados.size})
+          </button>
+        </div>
+      )}
 
       {/* Grid */}
       {filtrados.length === 0 ? (
@@ -161,7 +254,15 @@ export function DashboardClient({ pedidos, rol }: Props) {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtrados.map((order) => (
-            <OrderCard key={order.id} order={order} />
+            <OrderCard
+              key={order.id}
+              order={order}
+              modoSeleccion={modoSeleccion}
+              seleccionado={seleccionados.has(order.id)}
+              onToggleSeleccion={toggleSeleccion}
+              onImprimir={imprimirUno}
+              rol={rol}
+            />
           ))}
         </div>
       )}
