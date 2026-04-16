@@ -164,7 +164,7 @@ export default async function DashboardPage({ searchParams }: Props) {
         {/* Filtros por estado */}
         <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
           {ESTADO_FILTROS.filter(
-            (f) => rol === "admin" || f.key !== "despachado" || estadoFiltro === "despachado"
+            (f) => rol === "admin" || f.key !== "despachado"
           ).map((f) => {
             const count = contadores[f.key as keyof typeof contadores];
             const isActive = estadoFiltro === f.key ||
