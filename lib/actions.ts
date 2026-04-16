@@ -11,6 +11,45 @@ import { sendPedidoListoEmail, sendPedidoListoEnvioEmail } from "./email";
 import { sendPedidoListoWhatsApp } from "./whatsapp";
 import { calcularFechaEntrega } from "./delivery";
 import { fetchQloudOrder, qloudOrderToNewOrder } from "./qloud";
+import { or } from "drizzle-orm";
+
+// ─── Verificar duplicados ────────────────────────────────────────────────────
+
+export async function verificarDuplicado(params: {
+  referencia?: string;
+  qloudId?: number;
+}): Promise<{
+  existe: boolean;
+  orderId?: string;
+  estado?: string;
+  referencia?: string;
+} | null> {
+  const { referencia, qloudId } = params;
+  if (!referencia && !qloudId) return null;
+
+  const conditions = [];
+  if (referencia) conditions.push(eq(orders.referencia, referencia));
+  if (qloudId) conditions.push(eq(orders.qloudId, qloudId));
+
+  const [existing] = await db
+    .select({
+      id: orders.id,
+      estado: orders.estado,
+      referencia: orders.referencia,
+    })
+    .from(orders)
+    .where(conditions.length === 1 ? conditions[0] : or(...conditions))
+    .limit(1);
+
+  if (!existing) return { existe: false };
+
+  return {
+    existe: true,
+    orderId: existing.id,
+    estado: existing.estado,
+    referencia: existing.referencia,
+  };
+}
 
 // ─── Avanzar estado ───────────────────────────────────────────────────────────
 

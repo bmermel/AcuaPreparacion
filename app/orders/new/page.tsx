@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { crearPedidoManual } from "@/lib/actions";
+import { crearPedidoManual, verificarDuplicado } from "@/lib/actions";
 import { calcularFechaEntrega, formatearFechaEntrega } from "@/lib/delivery";
 import type { TipoProducto } from "@/lib/db/schema";
 
@@ -20,21 +20,72 @@ const TIPOS_PRODUCTO: { key: TipoProducto; emoji: string; label: string }[] = [
   { key: "varios", emoji: "🗂️", label: "Varios" },
 ];
 
+const ESTADO_LABELS: Record<string, string> = {
+  pendiente: "Pendiente",
+  preparacion: "En preparacion",
+  listo: "Listo",
+  despachado: "Despachado",
+};
+
+const ESTADO_COLORS: Record<string, string> = {
+  pendiente: "bg-yellow-50 border-yellow-300 text-yellow-800",
+  preparacion: "bg-blue-50 border-blue-300 text-blue-800",
+  listo: "bg-green-50 border-green-300 text-green-800",
+  despachado: "bg-gray-50 border-gray-300 text-gray-700",
+};
+
 export default function NuevoPedidoPage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [tipoOrden, setTipoOrden] = useState<string>("factura_b");
   const [tipoProducto, setTipoProducto] = useState<TipoProducto>("notebook");
+  const [referencia, setReferencia] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [usarFechaCustom, setUsarFechaCustom] = useState(false);
+  const [duplicado, setDuplicado] = useState<{
+    existe: boolean;
+    orderId?: string;
+    estado?: string;
+  } | null>(null);
+  const [checkingDup, setCheckingDup] = useState(false);
+  const [forzarCreacion, setForzarCreacion] = useState(false);
 
   const tipoActual = TIPOS_ORDEN.find((t) => t.key === tipoOrden);
   const fechaEstimada = calcularFechaEntrega(new Date(), tipoProducto, 1);
   const fechaEstimadaStr = formatearFechaEntrega(fechaEstimada);
 
+  // Verificar duplicado con debounce
+  const checkDuplicado = useCallback(async (ref: string) => {
+    if (!ref.trim()) {
+      setDuplicado(null);
+      setForzarCreacion(false);
+      return;
+    }
+    setCheckingDup(true);
+    try {
+      const result = await verificarDuplicado({ referencia: ref.trim() });
+      setDuplicado(result);
+      setForzarCreacion(false);
+    } catch {
+      setDuplicado(null);
+    }
+    setCheckingDup(false);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => checkDuplicado(referencia), 400);
+    return () => clearTimeout(timer);
+  }, [referencia, checkDuplicado]);
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    if (duplicado?.existe && !forzarCreacion) {
+      setError("Este pedido ya existe. Marca la casilla para crear igual.");
+      return;
+    }
+
     const formData = new FormData(e.currentTarget);
 
     startTransition(async () => {
@@ -91,16 +142,49 @@ export default function NuevoPedidoPage() {
               htmlFor="referencia"
               className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
             >
-              Número de referencia <span className="text-red-500">*</span>
+              Numero de referencia <span className="text-red-500">*</span>
             </label>
             <input
               id="referencia"
               name="referencia"
               type="text"
               required
+              value={referencia}
+              onChange={(e) => setReferencia(e.target.value)}
               placeholder={tipoActual?.placeholder ?? ""}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+            {checkingDup && (
+              <p className="text-xs text-gray-400 mt-1">Verificando...</p>
+            )}
+
+            {/* Alerta de duplicado */}
+            {duplicado?.existe && (
+              <div className={`mt-3 rounded-lg border p-3 ${ESTADO_COLORS[duplicado.estado ?? ""] ?? "bg-amber-50 border-amber-300 text-amber-800"}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium">
+                    ⚠️ Ya existe un pedido con esta referencia — Estado: {ESTADO_LABELS[duplicado.estado ?? ""] ?? duplicado.estado}
+                  </p>
+                  {duplicado.orderId && (
+                    <Link
+                      href={`/orders/${duplicado.orderId}`}
+                      className="text-xs text-blue-600 hover:underline flex-shrink-0"
+                    >
+                      Ver pedido →
+                    </Link>
+                  )}
+                </div>
+                <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={forzarCreacion}
+                    onChange={(e) => setForzarCreacion(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-xs">Crear de todas formas</span>
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Tipo de producto */}
@@ -140,7 +224,7 @@ export default function NuevoPedidoPage() {
             </p>
             <p className="text-sm font-medium text-blue-800">{fechaEstimadaStr}</p>
             <p className="text-xs text-blue-500 mt-1">
-              {tipoProducto === "notebook" ? "48hs hábiles" : "72hs hábiles"}
+              {tipoProducto === "notebook" ? "48hs habiles" : "72hs habiles"}
             </p>
 
             <div className="mt-3">
@@ -195,7 +279,7 @@ export default function NuevoPedidoPage() {
             </div>
             <div>
               <label htmlFor="clienteTel" className="block text-xs text-gray-600 mb-1">
-                Teléfono
+                Telefono
               </label>
               <input
                 id="clienteTel"
@@ -242,10 +326,10 @@ export default function NuevoPedidoPage() {
             </Link>
             <button
               type="submit"
-              disabled={isPending}
+              disabled={isPending || (duplicado?.existe === true && !forzarCreacion)}
               className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-medium rounded-lg transition-colors"
             >
-              {isPending ? "Creando..." : "Crear pedido"}
+              {isPending ? "Creando..." : duplicado?.existe && forzarCreacion ? "Crear de todas formas" : "Crear pedido"}
             </button>
           </div>
         </form>
