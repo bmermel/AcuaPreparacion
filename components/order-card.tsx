@@ -178,14 +178,19 @@ export function OrderCard({
           <p className="text-xs text-gray-500 mb-2">📞 {order.clienteTel}</p>
         )}
 
-        {/* Productos */}
+        {/* Productos (máx 3 visibles) */}
         {productos.length > 0 && (
           <div className="mb-2 space-y-0.5">
-            {productos.map((p, i) => (
-              <p key={i} className="text-xs text-gray-600">
+            {productos.slice(0, 3).map((p, i) => (
+              <p key={i} className="text-xs text-gray-600 truncate" title={`${p.cantidad}x ${p.nombre}`}>
                 <span className="font-medium">{p.cantidad}x</span> {p.nombre}
               </p>
             ))}
+            {productos.length > 3 && (
+              <p className="text-xs text-blue-500 font-medium">
+                +{productos.length - 3} producto{productos.length - 3 > 1 ? "s" : ""} más →
+              </p>
+            )}
           </div>
         )}
 
