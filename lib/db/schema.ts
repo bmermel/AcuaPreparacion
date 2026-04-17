@@ -99,6 +99,19 @@ export const orderHistory = pgTable("order_history", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ─── Logs de cron/polling ────────────────────────────────────────────────────
+
+export const cronLogs = pgTable("cron_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  job: text("job").notNull(), // "poll-qloud"
+  status: text("status").notNull(), // "ok" | "error" | "skipped"
+  checked: integer("checked").default(0),
+  imported: integer("imported").default(0),
+  updated: integer("updated").default(0),
+  detalle: text("detalle"), // info extra o mensaje de error
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // ─── Tipos TypeScript ─────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
@@ -107,6 +120,7 @@ export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type ReglaProducto = typeof reglasProducto.$inferSelect;
 export type OrderHistoryEntry = typeof orderHistory.$inferSelect;
+export type CronLog = typeof cronLogs.$inferSelect;
 
 export type Producto = {
   sku: string;

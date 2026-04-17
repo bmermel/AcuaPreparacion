@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders } from "@/lib/db/schema";
+import { orders, cronLogs } from "@/lib/db/schema";
 import {
   fetchQloudOrder,
   qloudOrderToNewOrder,
@@ -18,6 +18,8 @@ import { calcularFechaEntrega } from "@/lib/delivery";
  *
  * Se ejecuta cada 5 minutos vía Vercel Cron, solo en horario laboral
  * (lun-sáb 7:55 a 18:05 AR). El filtro horario lo maneja vercel.json.
+ *
+ * Cada ejecución se registra en la tabla cron_logs.
  */
 
 // Cuántos IDs hacia adelante probar desde el último conocido
@@ -35,7 +37,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Filtro horario: solo lunes(1) a sábado(6), 7:55 a 18:05 Argentina (UTC-3)
+  // Filtro horario: solo lunes(1) a sábado(6), 7 a 18hs Argentina
   const now = new Date();
   const arHour = Number(
     now.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires", hour: "numeric", hour12: false })
@@ -44,29 +46,43 @@ export async function GET(req: NextRequest) {
     now.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" })
   ).getDay();
 
-  // Domingo (0) = no trabajamos
   if (arDay === 0) {
+    await logCron("skipped", 0, 0, 0, "Domingo — no se trabaja");
     return NextResponse.json({ ok: true, skipped: true, reason: "Domingo — no se trabaja" });
   }
-  // Fuera de horario (antes de 7 o después de 18)
   if (arHour < 7 || arHour >= 19) {
+    await logCron("skipped", 0, 0, 0, `Fuera de horario (${arHour}hs AR)`);
     return NextResponse.json({ ok: true, skipped: true, reason: `Fuera de horario (${arHour}hs AR)` });
   }
 
   try {
     const result = await pollQloudOrders();
+    await logCron("ok", result.checked, result.imported, result.updated, `Rango ${result.rangoRevisado}`);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : "Error desconocido";
+    await logCron("error", 0, 0, 0, msg);
     console.error("[poll-qloud] Error:", err);
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : "Error desconocido" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+}
+
+async function logCron(status: string, checked: number, imported: number, updated: number, detalle: string) {
+  try {
+    await db.insert(cronLogs).values({
+      job: "poll-qloud",
+      status,
+      checked,
+      imported,
+      updated,
+      detalle,
+    });
+  } catch (e) {
+    console.error("[poll-qloud] Error guardando log:", e);
   }
 }
 
 async function pollQloudOrders() {
-  // Obtener el qloudId más alto que tenemos
   const [ultimo] = await db
     .select({ maxId: sql<number>`COALESCE(MAX(${orders.qloudId}), 0)` })
     .from(orders);
@@ -75,7 +91,7 @@ async function pollQloudOrders() {
 
   if (maxIdConocido === 0) {
     console.log("[poll-qloud] No hay órdenes de Qloud en la BD, no se puede determinar rango");
-    return { checked: 0, imported: 0, updated: 0, maxId: 0 };
+    return { checked: 0, imported: 0, updated: 0, maxId: 0, rangoRevisado: "N/A" };
   }
 
   let imported = 0;
@@ -83,8 +99,6 @@ async function pollQloudOrders() {
   let checked = 0;
   let nuevoMaxId = maxIdConocido;
 
-  // Probar IDs desde maxId+1 hasta maxId+LOOKAHEAD
-  // También reprobar algunos anteriores por si se saltaron (últimos 5)
   const startId = Math.max(1, maxIdConocido - 4);
   const endId = maxIdConocido + LOOKAHEAD;
 
@@ -94,12 +108,11 @@ async function pollQloudOrders() {
     checked++;
     try {
       const qloudOrder = await fetchQloudOrder(id);
-      if (!qloudOrder) continue; // No existe este ID
+      if (!qloudOrder) continue;
 
       const tipoProducto = detectarTipoProducto(qloudOrder.productos);
-      if (!tipoProducto) continue; // No tiene productos de computadoras
+      if (!tipoProducto) continue;
 
-      // Verificar si ya existe
       const [existente] = await db
         .select({ id: orders.id })
         .from(orders)
@@ -112,7 +125,6 @@ async function pollQloudOrders() {
       const fechaEntregaEstimada = calcularFechaEntrega(new Date(), tipoProducto, cantidadTotal);
 
       if (existente) {
-        // Actualizar datos (por si cambió algo en Qloud)
         await db
           .update(orders)
           .set({
@@ -129,7 +141,6 @@ async function pollQloudOrders() {
           .where(eq(orders.qloudId, id));
         updated++;
       } else {
-        // Nueva orden
         await db.insert(orders).values({ ...orderData, fechaEntregaEstimada });
         imported++;
         console.log(`[poll-qloud] Nueva orden #${id} importada (${tipoProducto})`);
@@ -137,7 +148,6 @@ async function pollQloudOrders() {
 
       if (id > nuevoMaxId) nuevoMaxId = id;
     } catch (err) {
-      // Si falla un ID individual, seguir con los demás
       console.error(`[poll-qloud] Error procesando ID ${id}:`, err);
     }
   }

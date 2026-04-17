@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { eq, sql, and, isNotNull } from "drizzle-orm";
+import { eq, sql, and, isNotNull, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, orderHistory } from "@/lib/db/schema";
+import { orders, orderHistory, cronLogs } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
@@ -228,6 +228,78 @@ export default async function MetricasPage() {
             </p>
           </div>
         )}
+
+        {/* Logs del cron de polling */}
+        {await (async () => {
+          const logs = await db
+            .select()
+            .from(cronLogs)
+            .where(eq(cronLogs.job, "poll-qloud"))
+            .orderBy(desc(cronLogs.createdAt))
+            .limit(20);
+
+          const STATUS_ICON: Record<string, string> = {
+            ok: "✅",
+            error: "❌",
+            skipped: "⏭️",
+          };
+
+          const STATUS_COLOR: Record<string, string> = {
+            ok: "text-green-700 bg-green-50",
+            error: "text-red-700 bg-red-50",
+            skipped: "text-gray-500 bg-gray-50",
+          };
+
+          function formatFechaLog(fecha: Date): string {
+            const d = new Date(fecha);
+            const dd = String(d.getDate()).padStart(2, "0");
+            const mm = String(d.getMonth() + 1).padStart(2, "0");
+            const hh = String(d.getHours()).padStart(2, "0");
+            const min = String(d.getMinutes()).padStart(2, "0");
+            return `${dd}/${mm} ${hh}:${min}`;
+          }
+
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
+                🔄 Polling automático Qloud — Últimas ejecuciones
+              </p>
+              {logs.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">
+                  Todavía no hay ejecuciones registradas. El cron corre cada 5 min (lun-sáb, 7-18hs).
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {logs.map((log) => (
+                    <div
+                      key={log.id}
+                      className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs ${STATUS_COLOR[log.status] ?? "bg-gray-50 text-gray-600"}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span>{STATUS_ICON[log.status] ?? "❓"}</span>
+                        <span className="font-medium">{formatFechaLog(log.createdAt)}</span>
+                        <span className="text-gray-400 truncate">{log.detalle}</span>
+                      </div>
+                      {log.status === "ok" && (
+                        <div className="flex gap-3 flex-shrink-0">
+                          {(log.imported ?? 0) > 0 && (
+                            <span className="font-semibold text-green-700">+{log.imported} nuevas</span>
+                          )}
+                          {(log.updated ?? 0) > 0 && (
+                            <span className="text-blue-600">{log.updated} actualizadas</span>
+                          )}
+                          {(log.imported ?? 0) === 0 && (log.updated ?? 0) === 0 && (
+                            <span className="text-gray-400">sin cambios</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </main>
     </div>
   );
