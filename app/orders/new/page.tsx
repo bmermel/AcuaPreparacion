@@ -224,7 +224,7 @@ export default function NuevoPedidoPage() {
             </p>
             <p className="text-sm font-medium text-blue-800">{fechaEstimadaStr}</p>
             <p className="text-xs text-blue-500 mt-1">
-              {tipoProducto === "notebook" ? "48hs habiles (lunes a viernes)" : "72hs habiles (lunes a viernes)"}
+              {tipoProducto === "notebook" ? "48hs habiles (lun-vie, 11 a 18hs)" : "72hs habiles (lun-vie, 11 a 18hs)"}
             </p>
 
             <div className="mt-3">

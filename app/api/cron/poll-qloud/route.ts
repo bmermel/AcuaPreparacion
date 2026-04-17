@@ -40,7 +40,8 @@ export async function GET(req: NextRequest) {
   // Permitir forzar ejecución con ?force=true (requiere CRON_SECRET)
   const forceRun = req.nextUrl.searchParams.get("force") === "true";
 
-  // Filtro horario: solo lunes(1) a sábado(6), 7 a 18hs Argentina
+  // Filtro horario: solo lunes(1) a viernes(5), 10:30 a 18:30 Argentina
+  // (arranca un poco antes y termina un poco despues para no perder ordenes al limite)
   if (!forceRun) {
     const now = new Date();
     const arHour = Number(
@@ -50,11 +51,11 @@ export async function GET(req: NextRequest) {
       now.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" })
     ).getDay();
 
-    if (arDay === 0) {
-      await logCron("skipped", 0, 0, 0, "Domingo — no se trabaja");
-      return NextResponse.json({ ok: true, skipped: true, reason: "Domingo — no se trabaja" });
+    if (arDay === 0 || arDay === 6) {
+      await logCron("skipped", 0, 0, 0, "Fin de semana — no se trabaja");
+      return NextResponse.json({ ok: true, skipped: true, reason: "Fin de semana — no se trabaja" });
     }
-    if (arHour < 7 || arHour >= 19) {
+    if (arHour < 10 || arHour >= 19) {
       await logCron("skipped", 0, 0, 0, `Fuera de horario (${arHour}hs AR)`);
       return NextResponse.json({ ok: true, skipped: true, reason: `Fuera de horario (${arHour}hs AR)` });
     }
