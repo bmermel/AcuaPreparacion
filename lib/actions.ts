@@ -450,6 +450,9 @@ export async function importarDesdeQloud(qloudId: number): Promise<{
     return { success: false, mensaje: `No se encontró el pedido #${qloudId} en Qloud` };
   }
 
+  // Advertir si la orden no está procesada (pero permitir importar igual manualmente)
+  const noProcesada = String(qloudOrder.estado) !== "1";
+
   // Detectar productos no clasificados para mostrar al usuario
   const { clasificarProducto } = await import("./qloud");
   const productosNoClasificados = qloudOrder.productos
@@ -499,11 +502,12 @@ export async function importarDesdeQloud(qloudId: number): Promise<{
   }
 
   revalidatePath("/");
+  const advertencia = noProcesada ? " (ATENCION: esta orden no esta procesada en Qloud)" : "";
   return {
     success: true,
     mensaje: existing
-      ? `Pedido #${qloudId} actualizado correctamente`
-      : `Pedido #${qloudId} importado correctamente`,
+      ? `Pedido #${qloudId} actualizado correctamente${advertencia}`
+      : `Pedido #${qloudId} importado correctamente${advertencia}`,
     orderId,
     productosNoClasificados: productosNoClasificados.length > 0 ? productosNoClasificados : undefined,
   };

@@ -115,6 +115,9 @@ async function pollQloudOrders() {
       const qloudOrder = await fetchQloudOrder(id);
       if (!qloudOrder) continue;
 
+      // Solo importar órdenes procesadas (estado "1")
+      if (String(qloudOrder.estado) !== "1") continue;
+
       const tipoProducto = detectarTipoProducto(qloudOrder.productos);
       if (!tipoProducto) continue;
 

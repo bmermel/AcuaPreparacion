@@ -38,6 +38,12 @@ async function procesarOrden(qloudId: number) {
     return;
   }
 
+  // Solo importar órdenes procesadas (estado "1")
+  if (String(qloudOrder.estado) !== "1") {
+    console.log(`[webhook] Orden ${qloudId} ignorada: no está procesada (estado: ${qloudOrder.estado})`);
+    return;
+  }
+
   const tipoProducto = detectarTipoProducto(qloudOrder.productos);
   if (!tipoProducto) {
     console.log(`[webhook] Orden ${qloudId} ignorada: no contiene productos de Computadoras`);
