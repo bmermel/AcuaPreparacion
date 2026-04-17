@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { eq, sql, and, isNotNull, desc } from "drizzle-orm";
+import { eq, sql, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, orderHistory, cronLogs } from "@/lib/db/schema";
 import type { CronLog } from "@/lib/db/schema";
@@ -15,7 +15,7 @@ const ESTADO_COLORS: Record<string, string> = {
 
 const ESTADO_LABELS: Record<string, string> = {
   pendiente: "Pendiente",
-  preparacion: "Preparación",
+  preparacion: "Preparacion",
   listo: "Listo",
   despachado: "Despachado",
 };
@@ -37,105 +37,117 @@ export default async function MetricasPage() {
   };
   const totalPedidos = todosLosEstados.length;
 
-  // Tiempo promedio pendiente → listo (usando historial)
-  // Buscamos las transiciones a "listo" y calculamos cuánto tardaron desde el createdAt del pedido
-  const transicionesAListo = await db
-    .select({
-      orderId: orderHistory.orderId,
-      fechaListo: orderHistory.createdAt,
-    })
-    .from(orderHistory)
-    .where(eq(orderHistory.estadoNuevo, "listo"));
-
+  // Queries que dependen de tablas que podrían no existir aún
+  let transicionesAListo: { orderId: string; fechaListo: Date }[] = [];
   let tiempoPromedioHoras: number | null = null;
-  if (transicionesAListo.length > 0) {
-    // Para cada transición a listo, buscar el createdAt del pedido
-    const orderIds = transicionesAListo.map((t) => t.orderId);
-    const pedidosConFecha = await db
-      .select({ id: orders.id, createdAt: orders.createdAt })
-      .from(orders)
-      .where(sql`${orders.id} = ANY(${orderIds})`);
+  const tecnicoStats: Record<string, { totalHoras: number; count: number }> = {};
+  let despachadosSemana = 0;
+  let despachadosMes = 0;
+  let logsPolling: CronLog[] = [];
+  let historialDisponible = false;
 
-    const fechasMap = new Map(pedidosConFecha.map((p) => [p.id, p.createdAt]));
+  try {
+    transicionesAListo = await db
+      .select({
+        orderId: orderHistory.orderId,
+        fechaListo: orderHistory.createdAt,
+      })
+      .from(orderHistory)
+      .where(eq(orderHistory.estadoNuevo, "listo"));
 
-    let totalHoras = 0;
-    let count = 0;
-    for (const t of transicionesAListo) {
-      const createdAt = fechasMap.get(t.orderId);
-      if (createdAt) {
-        const diffMs = new Date(t.fechaListo).getTime() - new Date(createdAt).getTime();
-        totalHoras += diffMs / (1000 * 60 * 60);
-        count++;
+    historialDisponible = true;
+
+    if (transicionesAListo.length > 0) {
+      const orderIds = transicionesAListo.map((t) => t.orderId);
+      const pedidosConFecha = await db
+        .select({ id: orders.id, createdAt: orders.createdAt })
+        .from(orders)
+        .where(sql`${orders.id} = ANY(${orderIds})`);
+
+      const fechasMap = new Map(pedidosConFecha.map((p) => [p.id, p.createdAt]));
+
+      let totalHoras = 0;
+      let count = 0;
+      for (const t of transicionesAListo) {
+        const createdAt = fechasMap.get(t.orderId);
+        if (createdAt) {
+          const diffMs = new Date(t.fechaListo).getTime() - new Date(createdAt).getTime();
+          totalHoras += diffMs / (1000 * 60 * 60);
+          count++;
+        }
+      }
+      if (count > 0) {
+        tiempoPromedioHoras = totalHoras / count;
       }
     }
-    if (count > 0) {
-      tiempoPromedioHoras = totalHoras / count;
+
+    // Tiempo promedio por tecnico
+    const historialPorTecnico = await db
+      .select({
+        userName: orderHistory.userName,
+        orderId: orderHistory.orderId,
+        estadoNuevo: orderHistory.estadoNuevo,
+        createdAt: orderHistory.createdAt,
+      })
+      .from(orderHistory)
+      .where(eq(orderHistory.estadoNuevo, "listo"));
+
+    for (const h of historialPorTecnico) {
+      const [prepEntry] = await db
+        .select({ createdAt: orderHistory.createdAt })
+        .from(orderHistory)
+        .where(
+          and(
+            eq(orderHistory.orderId, h.orderId),
+            eq(orderHistory.estadoNuevo, "preparacion")
+          )
+        )
+        .limit(1);
+
+      if (prepEntry) {
+        const diffMs = new Date(h.createdAt).getTime() - new Date(prepEntry.createdAt).getTime();
+        const horas = diffMs / (1000 * 60 * 60);
+        if (!tecnicoStats[h.userName]) {
+          tecnicoStats[h.userName] = { totalHoras: 0, count: 0 };
+        }
+        tecnicoStats[h.userName].totalHoras += horas;
+        tecnicoStats[h.userName].count++;
+      }
     }
-  }
 
-  // Tiempo promedio por técnico
-  const historialPorTecnico = await db
-    .select({
-      userName: orderHistory.userName,
-      orderId: orderHistory.orderId,
-      estadoNuevo: orderHistory.estadoNuevo,
-      createdAt: orderHistory.createdAt,
-    })
-    .from(orderHistory)
-    .where(eq(orderHistory.estadoNuevo, "listo"));
+    // Pedidos despachados esta semana y este mes
+    const ahora = new Date();
+    const inicioSemana = new Date(ahora);
+    inicioSemana.setDate(ahora.getDate() - ahora.getDay());
+    inicioSemana.setHours(0, 0, 0, 0);
+    const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
 
-  const tecnicoStats: Record<string, { totalHoras: number; count: number }> = {};
-  for (const h of historialPorTecnico) {
-    // Buscar cuándo se marcó en preparación
-    const [prepEntry] = await db
+    const despachadosHistorial = await db
       .select({ createdAt: orderHistory.createdAt })
       .from(orderHistory)
-      .where(
-        and(
-          eq(orderHistory.orderId, h.orderId),
-          eq(orderHistory.estadoNuevo, "preparacion")
-        )
-      )
-      .limit(1);
+      .where(eq(orderHistory.estadoNuevo, "despachado"));
 
-    if (prepEntry) {
-      const diffMs = new Date(h.createdAt).getTime() - new Date(prepEntry.createdAt).getTime();
-      const horas = diffMs / (1000 * 60 * 60);
-      if (!tecnicoStats[h.userName]) {
-        tecnicoStats[h.userName] = { totalHoras: 0, count: 0 };
-      }
-      tecnicoStats[h.userName].totalHoras += horas;
-      tecnicoStats[h.userName].count++;
-    }
+    despachadosSemana = despachadosHistorial.filter(
+      (h) => new Date(h.createdAt) >= inicioSemana
+    ).length;
+    despachadosMes = despachadosHistorial.filter(
+      (h) => new Date(h.createdAt) >= inicioMes
+    ).length;
+  } catch (err) {
+    console.error("[metricas] Error consultando order_history:", err);
   }
 
-  // Pedidos completados (despachados) esta semana y este mes
-  const ahora = new Date();
-  const inicioSemana = new Date(ahora);
-  inicioSemana.setDate(ahora.getDate() - ahora.getDay());
-  inicioSemana.setHours(0, 0, 0, 0);
-
-  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-
-  const despachadosHistorial = await db
-    .select({ createdAt: orderHistory.createdAt })
-    .from(orderHistory)
-    .where(eq(orderHistory.estadoNuevo, "despachado"));
-
-  const despachadosSemana = despachadosHistorial.filter(
-    (h) => new Date(h.createdAt) >= inicioSemana
-  ).length;
-  const despachadosMes = despachadosHistorial.filter(
-    (h) => new Date(h.createdAt) >= inicioMes
-  ).length;
-
-  // Logs del cron de polling
-  const logsPolling = await db
-    .select()
-    .from(cronLogs)
-    .where(eq(cronLogs.job, "poll-qloud"))
-    .orderBy(desc(cronLogs.createdAt))
-    .limit(20);
+  // Logs del cron (también con try-catch por si la tabla no existe)
+  try {
+    logsPolling = await db
+      .select()
+      .from(cronLogs)
+      .where(eq(cronLogs.job, "poll-qloud"))
+      .orderBy(desc(cronLogs.createdAt))
+      .limit(20);
+  } catch (err) {
+    console.error("[metricas] Error consultando cron_logs:", err);
+  }
 
   function formatHoras(h: number): string {
     if (h < 1) return `${Math.round(h * 60)} min`;
@@ -153,9 +165,9 @@ export default async function MetricasPage() {
             href="/"
             className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none"
           >
-            ←
+            &larr;
           </Link>
-          <h1 className="text-lg font-bold text-gray-900">Métricas</h1>
+          <h1 className="text-lg font-bold text-gray-900">Metricas</h1>
         </div>
       </header>
 
@@ -186,7 +198,7 @@ export default async function MetricasPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5 text-center">
             <p className="text-xs text-gray-500 mb-2">Tiempo promedio hasta listo</p>
             <p className="text-2xl font-bold text-blue-600">
-              {tiempoPromedioHoras !== null ? formatHoras(tiempoPromedioHoras) : "—"}
+              {tiempoPromedioHoras !== null ? formatHoras(tiempoPromedioHoras) : "\u2014"}
             </p>
             <p className="text-xs text-gray-400 mt-1">desde carga hasta listo</p>
           </div>
@@ -202,11 +214,11 @@ export default async function MetricasPage() {
           </div>
         </div>
 
-        {/* Tiempos por técnico */}
+        {/* Tiempos por tecnico */}
         {Object.keys(tecnicoStats).length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
-              Tiempo de preparación por técnico
+              Tiempo de preparacion por tecnico
             </p>
             <div className="space-y-3">
               {Object.entries(tecnicoStats)
@@ -226,14 +238,22 @@ export default async function MetricasPage() {
           </div>
         )}
 
-        {transicionesAListo.length === 0 && (
-          <div className="text-center py-10 text-gray-400">
-            <p className="text-3xl mb-2">📊</p>
+        {!historialDisponible && (
+          <div className="text-center py-6 text-gray-400">
             <p className="text-sm">
-              Las métricas de tiempo se calcularán a medida que se usen los cambios de estado.
+              Las tablas de historial se estan creando. Recarga en unos minutos.
+            </p>
+          </div>
+        )}
+
+        {historialDisponible && transicionesAListo.length === 0 && (
+          <div className="text-center py-10 text-gray-400">
+            <p className="text-3xl mb-2">&#x1F4CA;</p>
+            <p className="text-sm">
+              Las metricas de tiempo se calcularan a medida que se usen los cambios de estado.
             </p>
             <p className="text-xs mt-1">
-              El historial empezó a registrarse recién — los datos irán apareciendo.
+              El historial empezo a registrarse recien &mdash; los datos iran apareciendo.
             </p>
           </div>
         )}
@@ -248,9 +268,9 @@ export default async function MetricasPage() {
 // ─── Componente de logs del cron ──────────────────────────────────────────────
 
 const STATUS_ICON: Record<string, string> = {
-  ok: "✅",
-  error: "❌",
-  skipped: "⏭️",
+  ok: "OK",
+  error: "ERROR",
+  skipped: "SKIP",
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -272,7 +292,7 @@ function CronLogsSection({ logs }: { logs: CronLog[] }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
-        Polling automatico Qloud — Ultimas ejecuciones
+        Polling automatico Qloud &mdash; Ultimas ejecuciones
       </p>
       {logs.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-4">
@@ -286,7 +306,9 @@ function CronLogsSection({ logs }: { logs: CronLog[] }) {
               className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs ${STATUS_COLOR[log.status] ?? "bg-gray-50 text-gray-600"}`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <span>{STATUS_ICON[log.status] ?? "?"}</span>
+                <span className="font-bold text-[10px] px-1.5 py-0.5 rounded bg-white/50">
+                  {STATUS_ICON[log.status] ?? "?"}
+                </span>
                 <span className="font-medium" suppressHydrationWarning>{formatFechaLog(log.createdAt)}</span>
                 <span className="text-gray-400 truncate">{log.detalle}</span>
               </div>
