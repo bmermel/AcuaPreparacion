@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/poll-qloud",
+      "schedule": "*/5 7-18 * * 1-6"
+    }
+  ]
+}
