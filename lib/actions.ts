@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { orders, reglasProducto, orderHistory } from "./db/schema";
+import { orders, reglasProducto, orderHistory, clientes } from "./db/schema";
 import type { EstadoOrden, TipoOrden, TipoProducto, NewOrder, Producto } from "./db/schema";
 import { auth } from "./auth";
 import { redirect } from "next/navigation";
@@ -11,7 +11,67 @@ import { sendPedidoListoEmail, sendPedidoListoEnvioEmail } from "./email";
 import { sendPedidoListoWhatsApp } from "./whatsapp";
 import { calcularFechaEntrega } from "./delivery";
 import { fetchQloudOrder, qloudOrderToNewOrder } from "./qloud";
-import { or } from "drizzle-orm";
+import { or, and, isNotNull } from "drizzle-orm";
+
+// ─── Buscar o crear cliente ─────────────────────────────────────────────────
+
+/**
+ * Busca un cliente existente por email, teléfono o DNI.
+ * Si no existe, lo crea. Devuelve el ID del cliente.
+ */
+async function buscarOCrearCliente(datos: {
+  nombre?: string | null;
+  email?: string | null;
+  telefono?: string | null;
+  dni?: string | null;
+  razonSocial?: string | null;
+}): Promise<string | null> {
+  const { nombre, email, telefono, dni, razonSocial } = datos;
+
+  // Si no hay ningún dato identificatorio, no crear cliente
+  if (!email && !telefono && !dni && !nombre) return null;
+
+  // Buscar por campos únicos en orden de prioridad
+  const condiciones = [];
+  if (email) condiciones.push(eq(clientes.email, email));
+  if (dni) condiciones.push(eq(clientes.dni, dni));
+  if (telefono) condiciones.push(eq(clientes.telefono, telefono));
+
+  if (condiciones.length > 0) {
+    const [existente] = await db
+      .select({ id: clientes.id })
+      .from(clientes)
+      .where(condiciones.length === 1 ? condiciones[0] : or(...condiciones))
+      .limit(1);
+
+    if (existente) {
+      // Actualizar datos que puedan haber cambiado
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (nombre) updates.nombre = nombre;
+      if (email) updates.email = email;
+      if (telefono) updates.telefono = telefono;
+      if (dni) updates.dni = dni;
+      if (razonSocial) updates.razonSocial = razonSocial;
+
+      await db.update(clientes).set(updates).where(eq(clientes.id, existente.id));
+      return existente.id;
+    }
+  }
+
+  // Crear nuevo cliente
+  const [nuevo] = await db
+    .insert(clientes)
+    .values({
+      nombre: nombre || null,
+      email: email || null,
+      telefono: telefono || null,
+      dni: dni || null,
+      razonSocial: razonSocial || null,
+    })
+    .returning({ id: clientes.id });
+
+  return nuevo.id;
+}
 
 // ─── Verificar duplicados ────────────────────────────────────────────────────
 
@@ -262,14 +322,34 @@ export async function guardarDatosCliente(
     clienteEmail: string | null;
     clienteTel: string | null;
     clienteDni: string | null;
+    horarioRecepcion?: string | null;
+    notasCliente?: string | null;
   }
 ) {
   const session = await auth();
   if (!session) redirect("/login");
 
+  // Buscar o crear cliente en la tabla de clientes
+  const clienteId = await buscarOCrearCliente({
+    nombre: datos.clienteNombre,
+    email: datos.clienteEmail,
+    telefono: datos.clienteTel,
+    dni: datos.clienteDni,
+  });
+
+  // Si hay datos extra del cliente, guardarlos en la tabla de clientes
+  if (clienteId && (datos.horarioRecepcion !== undefined || datos.notasCliente !== undefined)) {
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (datos.horarioRecepcion !== undefined) updates.horarioRecepcion = datos.horarioRecepcion || null;
+    if (datos.notasCliente !== undefined) updates.notas = datos.notasCliente || null;
+    await db.update(clientes).set(updates).where(eq(clientes.id, clienteId));
+  }
+
+  // Actualizar la orden con los datos + vincular al cliente
   await db
     .update(orders)
     .set({
+      clienteId: clienteId,
       clienteNombre: datos.clienteNombre || null,
       clienteEmail: datos.clienteEmail || null,
       clienteTel: datos.clienteTel || null,
@@ -305,8 +385,16 @@ export async function crearPedidoManual(formData: FormData) {
   const fechaEntregaEstimada = calcularFechaEntrega(ahora, tipoProducto, 1);
   const fechaEntregaCustom = fechaCustomStr ? new Date(fechaCustomStr) : null;
 
+  // Vincular o crear cliente
+  const clienteId = await buscarOCrearCliente({
+    nombre: clienteNombre,
+    email: clienteEmail,
+    telefono: clienteTel,
+  });
+
   const newOrder: Omit<NewOrder, "id"> = {
     qloudId: null,
+    clienteId,
     tipoOrden,
     referencia,
     tipoProducto,

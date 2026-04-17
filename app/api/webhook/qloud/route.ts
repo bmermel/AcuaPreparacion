@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders } from "@/lib/db/schema";
+import { orders, clientes } from "@/lib/db/schema";
 import {
   fetchQloudOrder,
   qloudOrderToNewOrder,
@@ -56,10 +56,19 @@ async function procesarOrden(qloudId: number) {
     .reduce((s, p) => s + p.cantidad, 0);
   const fechaEntregaEstimada = calcularFechaEntrega(new Date(), tipoProducto, cantidadTotal);
 
+  // Buscar o crear cliente
+  const clienteId = await buscarOCrearClienteWebhook({
+    nombre: orderData.clienteNombre,
+    email: orderData.clienteEmail,
+    telefono: orderData.clienteTel,
+    dni: orderData.clienteDni,
+  });
+
   if (existente) {
     await db
       .update(orders)
       .set({
+        clienteId,
         clienteNombre: orderData.clienteNombre,
         clienteEmail: orderData.clienteEmail,
         clienteTel: orderData.clienteTel,
@@ -74,7 +83,48 @@ async function procesarOrden(qloudId: number) {
 
     console.log(`[webhook] Orden ${qloudId} actualizada`);
   } else {
-    await db.insert(orders).values({ ...orderData, fechaEntregaEstimada });
+    await db.insert(orders).values({ ...orderData, clienteId, fechaEntregaEstimada });
     console.log(`[webhook] Orden ${qloudId} creada (${tipoProducto})`);
   }
+}
+
+/** Versión sin auth para el webhook (no hay sesión) */
+async function buscarOCrearClienteWebhook(datos: {
+  nombre?: string | null;
+  email?: string | null;
+  telefono?: string | null;
+  dni?: string | null;
+}): Promise<string | null> {
+  const { nombre, email, telefono, dni } = datos;
+  if (!email && !telefono && !dni && !nombre) return null;
+
+  const condiciones = [];
+  if (email) condiciones.push(eq(clientes.email, email));
+  if (dni) condiciones.push(eq(clientes.dni, dni));
+  if (telefono) condiciones.push(eq(clientes.telefono, telefono));
+
+  if (condiciones.length > 0) {
+    const [existente] = await db
+      .select({ id: clientes.id })
+      .from(clientes)
+      .where(condiciones.length === 1 ? condiciones[0] : or(...condiciones))
+      .limit(1);
+
+    if (existente) {
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (nombre) updates.nombre = nombre;
+      if (email) updates.email = email;
+      if (telefono) updates.telefono = telefono;
+      if (dni) updates.dni = dni;
+      await db.update(clientes).set(updates).where(eq(clientes.id, existente.id));
+      return existente.id;
+    }
+  }
+
+  const [nuevo] = await db
+    .insert(clientes)
+    .values({ nombre: nombre || null, email: email || null, telefono: telefono || null, dni: dni || null })
+    .returning({ id: clientes.id });
+
+  return nuevo.id;
 }

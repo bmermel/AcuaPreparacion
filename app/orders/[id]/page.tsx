@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, orderHistory } from "@/lib/db/schema";
+import { orders, orderHistory, clientes } from "@/lib/db/schema";
 import type { Producto, DireccionEnvio, NotaInterna } from "@/lib/db/schema";
 import { StatusStepper } from "@/components/status-stepper";
 import { OrderActions } from "@/components/order-actions";
@@ -29,6 +29,17 @@ export default async function OrderDetailPage({ params }: Props) {
     .limit(1);
 
   if (!order) notFound();
+
+  // Obtener datos del cliente si está vinculado
+  let cliente = null;
+  if (order.clienteId) {
+    const [c] = await db
+      .select()
+      .from(clientes)
+      .where(eq(clientes.id, order.clienteId))
+      .limit(1);
+    cliente = c ?? null;
+  }
 
   const historial = await db
     .select()
@@ -82,7 +93,7 @@ export default async function OrderDetailPage({ params }: Props) {
         <NotasFull orderId={order.id} notas={notasInternas} />
 
         {/* Cliente (editable) */}
-        <ClientEditor order={order} />
+        <ClientEditor order={order} cliente={cliente} />
 
         {/* Productos */}
         {productos.length > 0 && (

@@ -47,11 +47,28 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ─── Clientes ────────────────────────────────────────────────────────────────
+
+export const clientes = pgTable("clientes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nombre: text("nombre"),
+  email: text("email"),
+  telefono: text("telefono"),
+  dni: text("dni"),                        // DNI o CUIT
+  razonSocial: text("razon_social"),       // Para facturas A
+  direccion: jsonb("direccion"),           // DireccionEnvio guardada
+  horarioRecepcion: text("horario_recepcion"), // Ej: "9 a 14hs", "solo mañanas"
+  notas: text("notas"),                    // Notas permanentes del cliente
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // ─── Pedidos ──────────────────────────────────────────────────────────────────
 
 export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
   qloudId: integer("qloud_id").unique(),
+  clienteId: uuid("cliente_id").references(() => clientes.id),
   tipoOrden: tipoOrdenEnum("tipo_orden").notNull(),
   referencia: text("referencia").notNull(),
   tipoProducto: tipoProductoEnum("tipo_producto").notNull(),
@@ -121,6 +138,8 @@ export type NewOrder = typeof orders.$inferInsert;
 export type ReglaProducto = typeof reglasProducto.$inferSelect;
 export type OrderHistoryEntry = typeof orderHistory.$inferSelect;
 export type CronLog = typeof cronLogs.$inferSelect;
+export type Cliente = typeof clientes.$inferSelect;
+export type NewCliente = typeof clientes.$inferInsert;
 
 export type Producto = {
   sku: string;

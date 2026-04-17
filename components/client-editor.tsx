@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import type { Order } from "@/lib/db/schema";
+import { useState, useTransition, useEffect } from "react";
+import type { Order, Cliente } from "@/lib/db/schema";
 import { guardarDatosCliente } from "@/lib/actions";
 
 type Props = {
   order: Order;
+  cliente?: Cliente | null;
 };
 
-export function ClientEditor({ order }: Props) {
+export function ClientEditor({ order, cliente }: Props) {
   const tieneCliente = !!(order.clienteNombre || order.clienteEmail || order.clienteTel || order.clienteDni);
 
   const [editando, setEditando] = useState(false);
@@ -16,6 +17,8 @@ export function ClientEditor({ order }: Props) {
   const [email, setEmail] = useState(order.clienteEmail ?? "");
   const [tel, setTel] = useState(order.clienteTel ?? "");
   const [dni, setDni] = useState(order.clienteDni ?? "");
+  const [horario, setHorario] = useState(cliente?.horarioRecepcion ?? "");
+  const [notasCliente, setNotasCliente] = useState(cliente?.notas ?? "");
   const [isSaving, startSaving] = useTransition();
 
   function handleGuardar() {
@@ -25,6 +28,8 @@ export function ClientEditor({ order }: Props) {
         clienteEmail: email.trim() || null,
         clienteTel: tel.trim() || null,
         clienteDni: dni.trim() || null,
+        horarioRecepcion: horario.trim() || null,
+        notasCliente: notasCliente.trim() || null,
       });
       setEditando(false);
     });
@@ -35,6 +40,8 @@ export function ClientEditor({ order }: Props) {
     setEmail(order.clienteEmail ?? "");
     setTel(order.clienteTel ?? "");
     setDni(order.clienteDni ?? "");
+    setHorario(cliente?.horarioRecepcion ?? "");
+    setNotasCliente(cliente?.notas ?? "");
     setEditando(false);
   }
 
@@ -59,7 +66,7 @@ export function ClientEditor({ order }: Props) {
           )}
           {order.clienteEmail && (
             <p className="text-xs text-gray-500">
-              <span className="text-gray-400">✉️</span>{" "}
+              <span className="text-gray-400">Email:</span>{" "}
               <a href={`mailto:${order.clienteEmail}`} className="hover:underline">
                 {order.clienteEmail}
               </a>
@@ -67,7 +74,7 @@ export function ClientEditor({ order }: Props) {
           )}
           {order.clienteTel && (
             <p className="text-xs text-gray-500">
-              <span className="text-gray-400">📞</span>{" "}
+              <span className="text-gray-400">Tel:</span>{" "}
               <a href={`tel:${order.clienteTel}`} className="hover:underline">
                 {order.clienteTel}
               </a>
@@ -75,7 +82,17 @@ export function ClientEditor({ order }: Props) {
           )}
           {order.clienteDni && (
             <p className="text-xs text-gray-500">
-              <span className="text-gray-400">🪪</span> DNI: {order.clienteDni}
+              <span className="text-gray-400">DNI:</span> {order.clienteDni}
+            </p>
+          )}
+          {cliente?.horarioRecepcion && (
+            <p className="text-xs text-gray-500">
+              <span className="text-gray-400">Horario:</span> {cliente.horarioRecepcion}
+            </p>
+          )}
+          {cliente?.notas && (
+            <p className="text-xs text-gray-500">
+              <span className="text-gray-400">Notas:</span> {cliente.notas}
             </p>
           )}
         </div>
@@ -83,7 +100,7 @@ export function ClientEditor({ order }: Props) {
     );
   }
 
-  // Vista de edición (se muestra siempre que no haya datos o cuando se clickea Editar)
+  // Vista de edicion
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="flex items-center justify-between mb-3">
@@ -135,6 +152,31 @@ export function ClientEditor({ order }: Props) {
               onChange={(e) => setDni(e.target.value)}
               placeholder="12345678"
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
+            />
+          </div>
+        </div>
+
+        {/* Campos del perfil del cliente */}
+        <div className="border-t border-gray-100 pt-3">
+          <p className="text-xs text-gray-400 mb-2">Datos guardados del cliente (aplican a todos sus pedidos)</p>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Horario de recepcion</label>
+            <input
+              type="text"
+              value={horario}
+              onChange={(e) => setHorario(e.target.value)}
+              placeholder="Ej: 9 a 14hs, solo mañanas, etc."
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
+            />
+          </div>
+          <div className="mt-3">
+            <label className="block text-xs text-gray-600 mb-1">Notas del cliente</label>
+            <textarea
+              value={notasCliente}
+              onChange={(e) => setNotasCliente(e.target.value)}
+              placeholder="Info permanente del cliente: preferencias, instrucciones especiales, etc."
+              rows={2}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white resize-none"
             />
           </div>
         </div>
