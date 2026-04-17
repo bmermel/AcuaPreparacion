@@ -37,22 +37,27 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Filtro horario: solo lunes(1) a sábado(6), 7 a 18hs Argentina
-  const now = new Date();
-  const arHour = Number(
-    now.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires", hour: "numeric", hour12: false })
-  );
-  const arDay = new Date(
-    now.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" })
-  ).getDay();
+  // Permitir forzar ejecución con ?force=true (requiere CRON_SECRET)
+  const forceRun = req.nextUrl.searchParams.get("force") === "true";
 
-  if (arDay === 0) {
-    await logCron("skipped", 0, 0, 0, "Domingo — no se trabaja");
-    return NextResponse.json({ ok: true, skipped: true, reason: "Domingo — no se trabaja" });
-  }
-  if (arHour < 7 || arHour >= 19) {
-    await logCron("skipped", 0, 0, 0, `Fuera de horario (${arHour}hs AR)`);
-    return NextResponse.json({ ok: true, skipped: true, reason: `Fuera de horario (${arHour}hs AR)` });
+  // Filtro horario: solo lunes(1) a sábado(6), 7 a 18hs Argentina
+  if (!forceRun) {
+    const now = new Date();
+    const arHour = Number(
+      now.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires", hour: "numeric", hour12: false })
+    );
+    const arDay = new Date(
+      now.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" })
+    ).getDay();
+
+    if (arDay === 0) {
+      await logCron("skipped", 0, 0, 0, "Domingo — no se trabaja");
+      return NextResponse.json({ ok: true, skipped: true, reason: "Domingo — no se trabaja" });
+    }
+    if (arHour < 7 || arHour >= 19) {
+      await logCron("skipped", 0, 0, 0, `Fuera de horario (${arHour}hs AR)`);
+      return NextResponse.json({ ok: true, skipped: true, reason: `Fuera de horario (${arHour}hs AR)` });
+    }
   }
 
   try {
