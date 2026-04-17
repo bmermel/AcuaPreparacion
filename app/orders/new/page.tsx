@@ -17,7 +17,7 @@ const TIPOS_ORDEN = [
 const TIPOS_PRODUCTO: { key: TipoProducto; emoji: string; label: string }[] = [
   { key: "notebook", emoji: "💻", label: "Notebook" },
   { key: "computadora", emoji: "🖥️", label: "Computadora" },
-  { key: "varios", emoji: "🗂️", label: "Varios" },
+  { key: "all_in_one", emoji: "🖥️", label: "All in One" },
 ];
 
 const ESTADO_LABELS: Record<string, string> = {
@@ -224,7 +224,7 @@ export default function NuevoPedidoPage() {
             </p>
             <p className="text-sm font-medium text-blue-800">{fechaEstimadaStr}</p>
             <p className="text-xs text-blue-500 mt-1">
-              {tipoProducto === "notebook" ? "48hs habiles" : "72hs habiles"}
+              {tipoProducto === "notebook" ? "48hs habiles (lunes a viernes)" : "72hs habiles (lunes a viernes)"}
             </p>
 
             <div className="mt-3">

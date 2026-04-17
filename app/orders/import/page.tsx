@@ -15,7 +15,8 @@ type Resultado = {
 const TIPO_LABELS: Record<TipoProducto, string> = {
   notebook: "💻 Notebook",
   computadora: "🖥️ Computadora",
-  varios: "🗂️ Varios",
+  all_in_one: "🖥️ All in One",
+  varios: "📦 Varios",
 };
 
 const ESTADO_LABELS: Record<string, string> = {

@@ -22,6 +22,20 @@
       "when": 1776307980944,
       "tag": "0002_adorable_ink",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776384627812,
+      "tag": "0003_foamy_pete_wisdom",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776385000000,
+      "tag": "0004_add_all_in_one",
+      "breakpoints": true
     }
   ]
 }

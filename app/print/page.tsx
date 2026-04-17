@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
-import type { Producto, DireccionEnvio } from "@/lib/db/schema";
+import type { Producto, DireccionEnvio, NotaInterna } from "@/lib/db/schema";
 import { inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -8,10 +8,10 @@ import { PrintTrigger, PrintButton } from "./print-trigger";
 
 const TIPO_ORDEN_LABEL: Record<string, string> = {
   web: "Venta Web",
-  factura_a: "Factura A",
-  factura_b: "Factura B",
-  cotizacion: "Cotizacion",
-  orden_venta: "Orden de Venta",
+  factura_a: "FCA",
+  factura_b: "FCB",
+  cotizacion: "FC COT",
+  orden_venta: "OV",
 };
 
 const ESTADO_LABEL: Record<string, string> = {
@@ -123,6 +123,8 @@ export default async function PrintPage({ searchParams }: Props) {
           {pedidosOrdenados.map((order) => {
             const productos = (order.productos as Producto[]) ?? [];
             const direccion = order.envioDireccion as DireccionEnvio | null;
+            const notasInternas = (order.notasInternas as NotaInterna[] | null) ?? [];
+            const notasImprimibles = notasInternas.filter((n) => n.imprimible);
             const total = productos.reduce(
               (sum, p) => sum + (p.precio ?? 0) * p.cantidad,
               0
@@ -265,15 +267,19 @@ export default async function PrintPage({ searchParams }: Props) {
                   </div>
                 )}
 
-                {/* Notas */}
-                {order.notas && (
+                {/* Notas imprimibles */}
+                {notasImprimibles.length > 0 && (
                   <div className="mt-3 border-t border-gray-200 pt-2">
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
                       Notas
                     </p>
-                    <p className="text-xs text-gray-700 whitespace-pre-wrap">
-                      {order.notas}
-                    </p>
+                    <div className="space-y-1">
+                      {notasImprimibles.map((n) => (
+                        <p key={n.id} className="text-xs text-gray-700">
+                          <span className="font-semibold">{n.userName}:</span> {n.mensaje}
+                        </p>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

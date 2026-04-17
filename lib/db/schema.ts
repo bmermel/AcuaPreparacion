@@ -22,6 +22,7 @@ export const tipoProductoEnum = pgEnum("tipo_producto", [
   "notebook",
   "computadora",
   "varios",
+  "all_in_one",
 ]);
 
 export const envioTipoEnum = pgEnum("envio_tipo", ["retiro", "domicilio"]);
@@ -64,6 +65,7 @@ export const orders = pgTable("orders", {
   pagoTipo: text("pago_tipo"),
   precio: text("precio"),
   notas: text("notas"),
+  notasInternas: jsonb("notas_internas").default([]),
   estado: estadoEnum("estado").notNull().default("pendiente"),
   fechaVenta: timestamp("fecha_venta"),
   fechaEntregaEstimada: timestamp("fecha_entrega_estimada"),
@@ -123,8 +125,16 @@ export type DireccionEnvio = {
   cp?: string;
 };
 
+export type NotaInterna = {
+  id: string;
+  userName: string;
+  mensaje: string;
+  createdAt: string;     // ISO string
+  imprimible: boolean;
+};
+
 export type EstadoOrden = "pendiente" | "preparacion" | "listo" | "despachado";
-export type TipoProducto = "notebook" | "computadora" | "varios";
+export type TipoProducto = "notebook" | "computadora" | "all_in_one" | "varios";
 export type TipoOrden =
   | "web"
   | "factura_a"

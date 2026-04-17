@@ -3,19 +3,20 @@ import Link from "next/link";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders, orderHistory } from "@/lib/db/schema";
-import type { Producto, DireccionEnvio } from "@/lib/db/schema";
+import type { Producto, DireccionEnvio, NotaInterna } from "@/lib/db/schema";
 import { StatusStepper } from "@/components/status-stepper";
 import { OrderActions } from "@/components/order-actions";
 import { ClientEditor } from "@/components/client-editor";
+import { NotasFull } from "@/components/notas-internas";
 
 type Props = { params: Promise<{ id: string }> };
 
 const TIPO_ORDEN_LABEL: Record<string, string> = {
   web: "Venta Web",
-  factura_a: "Factura A",
-  factura_b: "Factura B",
-  cotizacion: "Cotización",
-  orden_venta: "Orden de Venta",
+  factura_a: "FCA",
+  factura_b: "FCB",
+  cotizacion: "FC COT",
+  orden_venta: "OV",
 };
 
 export default async function OrderDetailPage({ params }: Props) {
@@ -37,6 +38,7 @@ export default async function OrderDetailPage({ params }: Props) {
 
   const productos = (order.productos as Producto[]) ?? [];
   const direccion = order.envioDireccion as DireccionEnvio | null;
+  const notasInternas = (order.notasInternas as NotaInterna[] | null) ?? [];
 
   const total = productos.reduce(
     (sum, p) => sum + (p.precio ?? 0) * p.cantidad,
@@ -73,8 +75,11 @@ export default async function OrderDetailPage({ params }: Props) {
           <StatusStepper estado={order.estado} />
         </div>
 
-        {/* Acciones de estado + notas */}
+        {/* Acciones de estado */}
         <OrderActions order={order} />
+
+        {/* Notas internas */}
+        <NotasFull orderId={order.id} notas={notasInternas} />
 
         {/* Cliente (editable) */}
         <ClientEditor order={order} />

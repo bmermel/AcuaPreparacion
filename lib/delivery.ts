@@ -3,19 +3,17 @@ import type { TipoProducto } from "./db/schema";
 /**
  * Cálculo de fecha estimada de entrega.
  *
- * "Horas hábiles" = horas de día hábil, no de horario de atención:
+ * "Horas hábiles" = horas de día hábil:
  *   - Lunes a viernes: 24 horas cada día
- *   - Sábado: 12 horas (medio día)
- *   - Domingo: 0 horas (no cuenta)
+ *   - Sábado y domingo: 0 horas (no cuentan)
  *
  * Notebooks (≤5 unidades): 48 horas hábiles
  * Computadoras / Varios: 72 horas hábiles
  */
 
 function horasHabilesEnDia(diaSemana: number): number {
-  if (diaSemana === 0) return 0;  // Domingo
-  if (diaSemana === 6) return 12; // Sábado = medio día
-  return 24;                       // Lunes a viernes
+  if (diaSemana === 0 || diaSemana === 6) return 0; // Sábado y domingo no cuentan
+  return 24;                                          // Lunes a viernes
 }
 
 export function calcularFechaEntrega(
@@ -29,8 +27,8 @@ export function calcularFechaEntrega(
   let horasRestantes = horasHabiles;
   const d = new Date(fechaInicio);
 
-  // Si cae domingo, avanzar al lunes
-  if (d.getDay() === 0) {
+  // Si cae fin de semana, avanzar al lunes
+  while (d.getDay() === 0 || d.getDay() === 6) {
     d.setDate(d.getDate() + 1);
     d.setHours(0, 0, 0, 0);
   }

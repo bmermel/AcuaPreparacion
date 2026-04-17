@@ -167,6 +167,92 @@ export async function guardarNotas(orderId: string, notas: string) {
   revalidatePath(`/orders/${orderId}`);
 }
 
+// ─── Notas internas (multi-usuario) ──────────────────────────────────────────
+
+import type { NotaInterna } from "./db/schema";
+
+export async function agregarNota(
+  orderId: string,
+  mensaje: string,
+  imprimible: boolean = false
+) {
+  const session = await auth();
+  if (!session) redirect("/login");
+
+  const [order] = await db
+    .select({ notasInternas: orders.notasInternas })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  const notasActuales = (order?.notasInternas as NotaInterna[] | null) ?? [];
+
+  const nuevaNota: NotaInterna = {
+    id: crypto.randomUUID(),
+    userName: session.user.name ?? session.user.email ?? "Usuario",
+    mensaje: mensaje.trim(),
+    createdAt: new Date().toISOString(),
+    imprimible,
+  };
+
+  await db
+    .update(orders)
+    .set({
+      notasInternas: [...notasActuales, nuevaNota],
+      updatedAt: new Date(),
+    })
+    .where(eq(orders.id, orderId));
+
+  revalidatePath("/");
+  revalidatePath(`/orders/${orderId}`);
+}
+
+export async function toggleNotaImprimible(orderId: string, notaId: string) {
+  const session = await auth();
+  if (!session) redirect("/login");
+
+  const [order] = await db
+    .select({ notasInternas: orders.notasInternas })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  const notas = (order?.notasInternas as NotaInterna[] | null) ?? [];
+  const updated = notas.map((n) =>
+    n.id === notaId ? { ...n, imprimible: !n.imprimible } : n
+  );
+
+  await db
+    .update(orders)
+    .set({ notasInternas: updated, updatedAt: new Date() })
+    .where(eq(orders.id, orderId));
+
+  revalidatePath("/");
+  revalidatePath(`/orders/${orderId}`);
+}
+
+export async function eliminarNota(orderId: string, notaId: string) {
+  const session = await auth();
+  if (!session) redirect("/login");
+
+  const [order] = await db
+    .select({ notasInternas: orders.notasInternas })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  const notas = (order?.notasInternas as NotaInterna[] | null) ?? [];
+  const updated = notas.filter((n) => n.id !== notaId);
+
+  await db
+    .update(orders)
+    .set({ notasInternas: updated, updatedAt: new Date() })
+    .where(eq(orders.id, orderId));
+
+  revalidatePath("/");
+  revalidatePath(`/orders/${orderId}`);
+}
+
 // ─── Guardar datos del cliente ────────────────────────────────────────────────
 
 export async function guardarDatosCliente(
@@ -392,7 +478,7 @@ export async function importarDesdeContabilium(params: {
       }
     } else {
       const comp = await getComprobanteById(id);
-      console.log("[Contabilium Comp detalle]", JSON.stringify({ Numero: comp.Numero, ItemsCount: comp.Items?.length, Items: comp.Items?.slice(0, 2) }));
+      console.log("[Contabilium Comp detalle]", JSON.stringify({ Numero: comp.Numero, RazonSocial: comp.RazonSocial, Email: comp.Email, ItemsCount: comp.Items?.length, Items: comp.Items?.slice(0, 2) }));
       referencia = comp.Numero;
       clienteNombre = comp.RazonSocial || null;
       clienteEmail = comp.Email || null;

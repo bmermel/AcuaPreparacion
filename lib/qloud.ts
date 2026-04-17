@@ -119,11 +119,11 @@ export function clasificarProducto(
   // Notebooks
   if (n.includes("notebook") || n.includes("laptop")) return "notebook";
 
-  // Computadoras de escritorio / All in One / Mini PC
+  // All in One
+  if (n.includes("all in one") || n.includes("all-in-one") || n.includes("allinone")) return "all_in_one";
+
+  // Computadoras de escritorio / Mini PC
   const keywordsComputadora = [
-    "all in one",
-    "all-in-one",
-    "allinone",
     "mini pc",
     "minipc",
     "pc gamer",
@@ -140,11 +140,8 @@ export function clasificarProducto(
 }
 
 /**
- * Analiza todos los productos de la orden y determina el tipo global:
- * - Si hay solo notebooks → "notebook"
- * - Si hay solo computadoras → "computadora"
- * - Si hay mezcla → "varios"
- * - Si no hay ninguno clasificable → null
+ * Analiza todos los productos de la orden y determina el tipo global.
+ * Si hay mezcla de tipos, usa el primero encontrado.
  */
 export function detectarTipoProducto(
   productos: QloudProducto[]
@@ -156,7 +153,10 @@ export function detectarTipoProducto(
   }
   if (tipos.size === 0) return null;
   if (tipos.size === 1) return [...tipos][0];
-  return "varios"; // mezcla de notebook + computadora
+  // Mezcla: priorizar notebook > all_in_one > computadora
+  if (tipos.has("notebook")) return "notebook";
+  if (tipos.has("all_in_one")) return "all_in_one";
+  return "computadora";
 }
 
 // ─── Conversión a formato interno ─────────────────────────────────────────────

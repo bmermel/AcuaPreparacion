@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { Order } from "@/lib/db/schema";
-import { avanzarEstado, retrocederEstado, guardarNotas, actualizarFechaEntregaCustom } from "@/lib/actions";
+import { avanzarEstado, retrocederEstado, actualizarFechaEntregaCustom } from "@/lib/actions";
 import { formatearFechaEntrega } from "@/lib/delivery";
 
 const NEXT_LABELS: Record<string, string | null> = {
@@ -20,10 +20,8 @@ const PREV_LABELS: Record<string, string | null> = {
 };
 
 export function OrderActions({ order }: { order: Order }) {
-  const [notas, setNotas] = useState(order.notas ?? "");
   const [isPendingAvanzar, startAvanzar] = useTransition();
   const [isPendingRetroceder, startRetroceder] = useTransition();
-  const [isSaving, startSaving] = useTransition();
   const [isSavingFecha, startSavingFecha] = useTransition();
   const [editandoFecha, setEditandoFecha] = useState(false);
   const [fechaCustomInput, setFechaCustomInput] = useState("");
@@ -39,11 +37,6 @@ export function OrderActions({ order }: { order: Order }) {
 
   function handleRetroceder() {
     startRetroceder(() => retrocederEstado(order.id));
-  }
-
-  function handleNotasBlur() {
-    if (notas === (order.notas ?? "")) return;
-    startSaving(() => guardarNotas(order.id, notas));
   }
 
   function handleGuardarFecha() {
@@ -147,27 +140,6 @@ export function OrderActions({ order }: { order: Order }) {
         </div>
       )}
 
-      {/* Notas */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <label
-          htmlFor="notas-detail"
-          className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
-        >
-          Notas internas
-        </label>
-        <textarea
-          id="notas-detail"
-          value={notas}
-          onChange={(e) => setNotas(e.target.value)}
-          onBlur={handleNotasBlur}
-          placeholder="Observaciones, detalles del equipo, accesorios, etc."
-          rows={4}
-          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-gray-300"
-        />
-        {isSaving && (
-          <p className="text-xs text-gray-400 mt-1">Guardando...</p>
-        )}
-      </div>
     </>
   );
 }

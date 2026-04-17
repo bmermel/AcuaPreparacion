@@ -4,11 +4,13 @@ import { useState, useMemo, useCallback } from "react";
 import type { Order, EstadoOrden, TipoProducto } from "@/lib/db/schema";
 import { OrderCard } from "./order-card";
 
+import type { Producto } from "@/lib/db/schema";
+
 const SECCIONES = [
   { key: "todos", label: "Todos", emoji: "📋" },
   { key: "notebook", label: "Notebooks", emoji: "💻" },
   { key: "computadora", label: "Computadoras", emoji: "🖥️" },
-  { key: "varios", label: "Varios", emoji: "🗂️" },
+  { key: "all_in_one", label: "All in One", emoji: "🖥️" },
 ] as const;
 
 const ESTADOS: { key: string; label: string }[] = [
@@ -64,12 +66,15 @@ export function DashboardClient({ pedidos, rol }: Props) {
     return porSeccion.filter((o) => o.estado === estado);
   }, [porSeccion, estado, rol]);
 
-  // Filtrar por búsqueda
+  // Filtrar por búsqueda (incluye productos)
   const filtrados = useMemo(() => {
     if (!termino) return porEstado;
     return porEstado.filter((o) => {
       const campos = [o.referencia, o.clienteNombre, o.clienteTel, o.clienteEmail];
-      return campos.some((c) => c?.toLowerCase().includes(termino));
+      if (campos.some((c) => c?.toLowerCase().includes(termino))) return true;
+      // Buscar en nombres de productos
+      const prods = (o.productos as Producto[] | null) ?? [];
+      return prods.some((p) => p.nombre?.toLowerCase().includes(termino));
     });
   }, [porEstado, termino]);
 
